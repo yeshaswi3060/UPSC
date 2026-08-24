@@ -61,25 +61,34 @@ function loadStoredPurchase() {
   }
 }
 
+function getDevelopmentPreview() {
+  if (!import.meta.env.DEV) return 'landing'
+  const preview = new URLSearchParams(window.location.search).get('preview')
+  return ['success', 'viewer', 'processing'].includes(preview) ? preview : 'landing'
+}
+
 function PrashnavaliApp({
   productTitle = 'General Studies Paper II — Complete Question Set',
   examLabel = 'UPSC Civil Services · Mains',
   price = 99,
 }) {
   const checkoutRef = useRef(null)
+  const [initialScreen] = useState(getDevelopmentPreview)
   const [storedPurchase] = useState(loadStoredPurchase)
 
-  const [screen, setScreen] = useState('landing')
+  const [screen, setScreen] = useState(initialScreen)
   const [showPurchaseNotice, setShowPurchaseNotice] = useState(Boolean(storedPurchase))
-  const [email, setEmail] = useState(storedPurchase?.email ?? '')
-  const [phone, setPhone] = useState(storedPurchase?.phone ?? '')
+  const [email, setEmail] = useState(storedPurchase?.email ?? (initialScreen !== 'landing' ? 'student@learnova.test' : ''))
+  const [phone, setPhone] = useState(storedPurchase?.phone ?? (initialScreen !== 'landing' ? '9999999999' : ''))
   const [error, setError] = useState('')
   const [viewerPage, setViewerPage] = useState(0)
   const [downloaded, setDownloaded] = useState(false)
   const [paymentBusy, setPaymentBusy] = useState(false)
-  const [order, setOrder] = useState(() => storedPurchase
-    ? { id: storedPurchase.orderId, date: storedPurchase.orderDate }
-    : null)
+  const [order, setOrder] = useState(() => {
+    if (storedPurchase) return { id: storedPurchase.orderId, date: storedPurchase.orderDate }
+    if (initialScreen !== 'landing') return { id: 'order_preview_mobile', date: '24 Aug 2026' }
+    return null
+  })
 
   const priceLabel = `₹${price}`
 
@@ -170,6 +179,11 @@ function PrashnavaliApp({
     setTimeout(() => setDownloaded(false), 2400)
   }
 
+  function changeViewerPage(nextPage) {
+    setViewerPage(nextPage)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
   if (screen === 'processing') {
     return (
       <div className="pv-flow-page">
@@ -202,6 +216,7 @@ function PrashnavaliApp({
     return (
       <div className="pv-flow-page">
         <FlowHeader label="Your library" onHome={() => { setScreen('landing'); setShowPurchaseNotice(false) }} />
+        {downloaded && <DownloadToast />}
         <main className="pv-library-page">
           <section className="pv-library-hero">
             <div className="pv-library-title">
@@ -210,6 +225,10 @@ function PrashnavaliApp({
                 <span className="pv-flow-eyebrow">Purchase complete</span>
                 <h1>Your preparation pack is ready.</h1>
                 <p>Everything is unlocked and ready for <strong>{email}</strong>. Start with the timed paper, then use the key and solutions to evaluate your attempt.</p>
+                <div className="pv-library-quick-actions">
+                  <button type="button" className="pv-button pv-button-primary" onClick={() => setScreen('viewer')}>Open question paper <span>→</span></button>
+                  <button type="button" className="pv-button pv-library-download" onClick={downloadPaper}>Download all 3 files <span>↓</span></button>
+                </div>
               </div>
             </div>
             <aside className="pv-order-summary">
@@ -222,15 +241,13 @@ function PrashnavaliApp({
 
           <section className="pv-library-content">
             <div className="pv-library-heading">
-              <div><span className="pv-flow-eyebrow">Your files</span><h2>General Studies Paper II</h2></div>
-              <button type="button" className="pv-button pv-button-primary" onClick={downloadPaper}>Download complete pack <span>↓</span></button>
+              <div><span className="pv-flow-eyebrow">Your files</span><h2>General Studies Paper II</h2><p>Open the paper in the reader or save each file to your device.</p></div>
             </div>
             <div className="pv-library-files">
               <LibraryFile type="PDF" number="01" title="Question paper" meta="6 questions · 90 marks" action="Open reader" onClick={() => setScreen('viewer')} featured />
               <LibraryFile type="KEY" number="02" title="Verified answer key" meta="Answer directions · PDF" action="Download" onClick={downloadPaper} />
               <LibraryFile type="SOL" number="03" title="Detailed solutions" meta="Model structure · PDF" action="Download" onClick={downloadPaper} />
             </div>
-            {downloaded && <div className="pv-download-note" role="status">Your download has started successfully.</div>}
           </section>
 
           <section className="pv-library-next">
@@ -256,10 +273,20 @@ function PrashnavaliApp({
     return (
       <div className="pv-reader-page">
         <header className="pv-reader-header">
-          <button type="button" className="pv-reader-brand" onClick={() => setScreen('success')}><span>L</span><strong>Learnova</strong></button>
+          <button type="button" className="pv-reader-back" onClick={() => setScreen('success')}><span>←</span><strong>Your files</strong></button>
           <div className="pv-reader-document"><span>Reading</span><strong>General Studies Paper II</strong></div>
-          <div className="pv-reader-actions"><span className="pv-owned-pill">✓ Purchased</span><button type="button" className="pv-button pv-button-primary" onClick={downloadPaper}>Download PDF ↓</button></div>
+          <div className="pv-reader-actions"><span className="pv-owned-pill">✓ Purchased</span><button type="button" className="pv-button pv-button-primary pv-reader-download" onClick={downloadPaper}><span>↓</span> Download</button></div>
         </header>
+
+        <nav className="pv-reader-mobile-tools" aria-label="Reader sections">
+          <div><span>Question paper</span><strong>{SECTIONS[viewerPage].label} · {SECTIONS[viewerPage].questions.length} questions</strong></div>
+          <div className="pv-reader-mobile-tabs">
+            {SECTIONS.map((section, index) => (
+              <button type="button" className={viewerPage === index ? 'active' : ''} aria-current={viewerPage === index ? 'page' : undefined} key={section.label} onClick={() => changeViewerPage(index)}>{section.label.replace('Section ', '')}</button>
+            ))}
+          </div>
+        </nav>
+        {downloaded && <DownloadToast />}
 
         <main className="pv-reader-layout">
           <aside className="pv-reader-sidebar">
@@ -269,7 +296,7 @@ function PrashnavaliApp({
             <div className="pv-reader-sections">
               <span>Sections</span>
               {SECTIONS.map((section, index) => (
-                <button type="button" className={viewerPage === index ? 'active' : ''} key={section.label} onClick={() => setViewerPage(index)}><span>{String(index + 1).padStart(2, '0')}</span>{section.label}<small>{section.questions.length} questions</small></button>
+                <button type="button" className={viewerPage === index ? 'active' : ''} aria-current={viewerPage === index ? 'page' : undefined} key={section.label} onClick={() => changeViewerPage(index)}><span>{String(index + 1).padStart(2, '0')}</span>{section.label}<small>{section.questions.length} questions</small></button>
               ))}
             </div>
             <div className="pv-reader-tip"><span>Tip</span><p>Give yourself 12 minutes for each 10-mark answer.</p></div>
@@ -289,9 +316,9 @@ function PrashnavaliApp({
               <div className="pv-paper-page-number">— {viewerPage + 1} —</div>
             </div>
             <footer className="pv-reader-pagination">
-              <button type="button" className="pv-button pv-button-secondary" disabled={viewerPage === 0} onClick={() => setViewerPage((p) => Math.max(0, p - 1))}>← Previous section</button>
-              <span>Page {viewerPage + 1} of {SECTIONS.length}</span>
-              <button type="button" className="pv-button pv-button-secondary" disabled={viewerPage === SECTIONS.length - 1} onClick={() => setViewerPage((p) => Math.min(SECTIONS.length - 1, p + 1))}>Next section →</button>
+              <button type="button" className="pv-button pv-button-secondary" disabled={viewerPage === 0} onClick={() => changeViewerPage(Math.max(0, viewerPage - 1))}>← Previous section</button>
+              <span>Section {viewerPage + 1} of {SECTIONS.length}</span>
+              <button type="button" className="pv-button pv-button-secondary" disabled={viewerPage === SECTIONS.length - 1} onClick={() => changeViewerPage(Math.min(SECTIONS.length - 1, viewerPage + 1))}>Next section →</button>
             </footer>
           </section>
         </main>
@@ -357,6 +384,20 @@ function PrashnavaliApp({
           <div><strong>∞</strong><span>Lifetime access<br />after purchase</span></div>
         </section>
 
+        <section className="pv-section pv-friction-section" aria-labelledby="friction-title">
+          <div className="pv-friction-heading">
+            <span className="pv-eyebrow">Built around the real struggle</span>
+            <h2 id="friction-title">Knowing the syllabus is not the same as writing a strong answer.</h2>
+            <p>Learnova turns passive preparation into a simple practice habit: attempt, evaluate, then improve.</p>
+          </div>
+          <div className="pv-friction-grid" aria-label="Common answer-writing challenges">
+            <article><span>01</span><strong>“I know the topic, but my answer lacks structure.”</strong><p>Use marks, word limits, and model frameworks to practise writing with intent.</p></article>
+            <article><span>02</span><strong>“I’m not sure how to evaluate my own response.”</strong><p>Check the expected direction first, then compare the reasoning in detail.</p></article>
+            <article><span>03</span><strong>“I read a lot, but I do not practise consistently.”</strong><p>A compact paper makes it easier to start, finish, and learn from one attempt.</p></article>
+          </div>
+          <div className="pv-friction-method"><span>The Learnova loop</span><strong>Attempt <i>→</i> Evaluate <i>→</i> Improve</strong><a href="#inside">See what is included <b>↓</b></a></div>
+        </section>
+
         <section className="pv-section pv-value-section" id="inside">
           <div className="pv-section-heading">
             <span className="pv-eyebrow">Everything you need</span>
@@ -412,7 +453,7 @@ function PrashnavaliApp({
             </div>
             {error && <div className="pv-form-error" role="alert">{error}</div>}
             <button type="button" className="pv-button pv-button-primary pv-pay-button" onClick={handlePay} disabled={paymentBusy}>{paymentBusy ? 'Preparing secure checkout…' : <>Pay {priceLabel} with Razorpay <span>→</span></>}</button>
-            <div className="pv-payment-note"><span>◇</span> Razorpay secure checkout · One-time payment</div>
+            <div className="pv-payment-note" aria-label="Payment assurances"><span>◇ Secure Razorpay</span><span>✓ Instant access</span><span>↻ No renewal</span></div>
           </div>
         </section>
 
@@ -498,6 +539,10 @@ function LibraryFile({ type, number, title, meta, action, onClick, featured = fa
       <button type="button" onClick={onClick}>{action} <span>→</span></button>
     </article>
   )
+}
+
+function DownloadToast() {
+  return <div className="pv-download-toast" role="status"><span>✓</span><div><strong>Download started</strong><small>Your file is being saved to this device.</small></div></div>
 }
 
 function Faq({ question, children }) {
