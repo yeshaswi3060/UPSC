@@ -241,14 +241,21 @@ async function syncToSheet(env, event) {
 
 async function razorpayRequest(env, path, options = {}) {
   const authorization = btoa(`${env.RAZORPAY_KEY_ID}:${env.RAZORPAY_KEY_SECRET}`)
-  const response = await fetch(`https://api.razorpay.com/v1${path}`, {
-    ...options,
-    headers: {
-      Authorization: `Basic ${authorization}`,
-      'Content-Type': 'application/json',
-      ...(options.headers || {}),
-    },
-  })
+  let response
+  try {
+    response = await fetch(`https://api.razorpay.com/v1${path}`, {
+      ...options,
+      headers: {
+        Authorization: `Basic ${authorization}`,
+        'Content-Type': 'application/json',
+        ...(options.headers || {}),
+      },
+    })
+  } catch {
+    const error = new Error('We could not connect to Razorpay. No charge was made—please try again.')
+    error.safePaymentError = true
+    throw error
+  }
   const body = await response.json().catch(() => ({}))
   if (!response.ok) {
     const message = body.error?.description || body.error?.reason || 'Razorpay request failed.'
@@ -314,7 +321,7 @@ function paymentErrorMessage(error) {
     'Payment signature verification failed.',
     'Payment details do not match the order.',
   ]
-  return safeMessages.includes(error?.message) ? error.message : 'Payment could not be completed. Please try again.'
+  return safeMessages.includes(error?.message) ? error.message : 'We could not start secure checkout. No charge was made—please try again.'
 }
 
 async function hmacHex(value, secret) {
