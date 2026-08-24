@@ -1,0 +1,164 @@
+/* Classical design system — tokens + component classes, used by the Prashnavali app screens. */
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=Lora:wght@400;600&display=swap');
+
+.pv-root {
+  --color-bg: #f3f2f2;
+  --color-surface: #eae9e9;
+  --color-text: #201f1d;
+  --color-accent: #b68235;
+  --color-accent-2: #ac803e;
+  --color-divider: color-mix(in srgb, #201f1d 16%, transparent);
+
+  --color-neutral-100: #f8f4f4;
+  --color-neutral-800: #444141;
+
+  --color-accent-100: #fff3e4;
+  --color-accent-700: #7d5411;
+  --color-accent-800: #5a3b0a;
+
+  --font-heading: 'Cormorant Garamond', system-ui, sans-serif;
+  --font-heading-weight: 600;
+  --font-body: 'Lora', system-ui, sans-serif;
+
+  --space-1: 4.6px;
+  --space-2: 9.2px;
+  --space-3: 13.8px;
+  --space-4: 18.4px;
+
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 7px;
+
+  --shadow-sm: 0 1px 2px color-mix(in srgb, #2d2b2b 14%, transparent);
+  --shadow-lg: 0 12px 32px color-mix(in srgb, #2d2b2b 22%, transparent);
+}
+
+.pv-root * ,
+.pv-root *::before,
+.pv-root *::after { box-sizing: border-box; }
+
+.pv-root {
+  font-family: var(--font-body);
+  color: var(--color-text);
+  font-size: 15px;
+  line-height: 1.55;
+  font-weight: 400;
+}
+
+.pv-root h1, .pv-root h2, .pv-root h3, .pv-root h4, .pv-root h5, .pv-root h6 {
+  font-family: var(--font-heading);
+  font-weight: var(--font-heading-weight);
+  line-height: 1.12;
+  letter-spacing: -0.015em;
+  margin: 0 0 var(--space-2);
+}
+.pv-root h1 { font-size: 32px; }
+.pv-root h6 { font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; }
+.pv-root p { margin: 0 0 var(--space-3); }
+.pv-root :focus { outline: none; }
+.pv-root :focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.pv-root ::selection { background: color-mix(in srgb, var(--color-accent) 30%, transparent); }
+
+.pv-root .hr {
+  height: 1px; border: 0; margin: var(--space-4) 0;
+  background: var(--color-divider);
+}
+
+.pv-root .btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  cursor: pointer; text-decoration: none;
+  font-family: var(--font-heading); font-weight: var(--font-heading-weight);
+  font-size: 14px; line-height: 1.2; color: var(--color-text);
+  background: transparent; border: 1px solid transparent;
+  padding: var(--space-2) calc(var(--space-3) * 1.2);
+  border-radius: var(--radius-md);
+}
+.pv-root .btn svg { display: block; }
+.pv-root .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.pv-root .btn-primary { color: var(--color-accent); border-color: var(--color-accent); }
+.pv-root .btn-primary:hover { background: color-mix(in srgb, var(--color-accent) 12%, transparent); }
+.pv-root .btn-primary:active { background: color-mix(in srgb, var(--color-accent) 22%, transparent); }
+.pv-root .btn-secondary { border-color: var(--color-divider); }
+.pv-root .btn-secondary:hover { background: color-mix(in srgb, var(--color-text) 7%, transparent); }
+.pv-root .btn-ghost { color: var(--color-accent); padding-inline: var(--space-1); }
+.pv-root .btn-ghost:hover { background: color-mix(in srgb, var(--color-accent) 10%, transparent); }
+.pv-root .btn-block { width: 100%; margin-top: var(--space-2); }
+
+.pv-root .field > label {
+  display: block; font-size: 12px; margin-bottom: 5px;
+  color: color-mix(in srgb, var(--color-text) 70%, transparent);
+}
+.pv-root .input {
+  width: 100%; min-height: 36px; padding: 6px 10px; font: inherit;
+  font-size: 14px; color: var(--color-text); caret-color: var(--color-accent);
+  background: transparent;
+  border: 1px solid var(--color-divider); border-radius: var(--radius-md);
+}
+.pv-root .input:hover { border-color: color-mix(in srgb, var(--color-text) 45%, transparent); }
+.pv-root .input:focus-visible { border-color: var(--color-accent); outline-offset: 0; }
+
+.pv-root .card {
+  display: flex; flex-direction: column; gap: var(--space-2);
+  padding: var(--space-3); border-radius: var(--radius-md); background: transparent; border: 1px solid var(--color-divider);
+}
+.pv-root .card-kicker { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--color-accent); }
+.pv-root .card-title {
+  font-family: var(--font-heading); font-weight: var(--font-heading-weight);
+  font-size: 17px; line-height: 1.2;
+}
+.pv-root .card-body { margin: 0; font-size: 13px; opacity: 0.8; flex: 1; }
+.pv-root .card-meta {
+  display: flex; align-items: center; gap: 6px; font-size: 11px;
+  color: color-mix(in srgb, var(--color-text) 50%, transparent);
+}
+.pv-root .elev-sm { box-shadow: var(--shadow-sm); }
+
+.pv-root .tag {
+  display: inline-flex; align-items: center; font-size: 11px;
+  letter-spacing: 0.02em; padding: 3px 10px;
+  border-radius: calc(var(--radius-md) * 0.75);
+}
+.pv-root .tag-accent { background: var(--color-accent-100); color: var(--color-accent-800); }
+.pv-root .tag-neutral { background: var(--color-neutral-100); color: var(--color-neutral-800); }
+.pv-root .tag-outline { border: 1px solid var(--color-accent); color: var(--color-accent); }
+
+.pv-root .plate {
+  filter: sepia(0.22) saturate(0.82) contrast(1.05);
+  border: 6px solid var(--color-surface); outline: 1px solid var(--color-divider);
+}
+
+@keyframes pv-checkDraw { to { stroke-dashoffset: 0; } }
+@keyframes pv-ringPop { 0% { transform: scale(0.6); opacity: 0; } 60% { transform: scale(1.08); opacity: 1; } 100% { transform: scale(1); opacity: 1; } }
+@keyframes pv-spinRing { to { transform: rotate(360deg); } }
+@keyframes pv-fadeInUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+/* Phone-view shell: caps the app to a phone-sized column and centers it, so it
+   always reads as a phone screen — on a laptop it sits inside a framed card;
+   on an actual phone viewport the frame drops away and it goes edge-to-edge. */
+.pv-page {
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #d9d6d2;
+  padding: 40px 16px;
+  box-sizing: border-box;
+}
+
+.pv-app {
+  width: 100%;
+  max-width: 430px;
+  height: min(874px, calc(100dvh - 80px));
+  background: var(--color-bg);
+  color: var(--color-text);
+  border-radius: 32px;
+  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.22), 0 0 0 1px rgba(0, 0, 0, 0.08);
+  overflow-y: auto;
+  overflow-x: hidden;
+  position: relative;
+}
+
+@media (max-width: 480px) {
+  .pv-page { padding: 0; background: var(--color-bg); }
+  .pv-app { border-radius: 0; box-shadow: none; height: 100dvh; max-width: none; }
+}
