@@ -36,7 +36,7 @@ function Login() {
     <section className="login-page">
       <div className="login-intro">
         <span className="site-eyebrow">Private workspace</span>
-        <h1>Welcome back to<br /><em>Prashnavali.</em></h1>
+        <h1>Welcome back to<br /><em>Learnova.</em></h1>
         <p>Manage your question papers and keep your preparation products organised from one focused workspace.</p>
         <div className="login-assurance">
           <div><span>01</span><p><strong>Focused dashboard</strong>See the essentials without unnecessary clutter.</p></div>
@@ -49,7 +49,7 @@ function Login() {
           <div className="login-card-heading">
             <span className="site-eyebrow">Admin access</span>
             <h2>Sign in to continue</h2>
-            <p>Use the email connected to your Prashnavali account.</p>
+          <p>Use the email connected to your Learnova account.</p>
           </div>
 
           <label htmlFor="admin-email">Email address
@@ -66,7 +66,7 @@ function Login() {
             {submitting ? 'Signing you in…' : 'Sign in to dashboard'}
             {!submitting && <span>→</span>}
           </button>
-          <p className="login-support">Having trouble? <a href="mailto:support@prashnavali.in">Contact support</a></p>
+          <p className="login-support">Having trouble? <a href="mailto:support@learnova.in">Contact support</a></p>
         </form>
       </div>
     </section>

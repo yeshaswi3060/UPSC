@@ -10,7 +10,7 @@ function Admin() {
         <div>
           <span className="site-eyebrow">Admin workspace</span>
           <h1>Good to see you.</h1>
-          <p>Here’s a clear view of your Prashnavali product and launch readiness.</p>
+        <p>Here’s a clear view of your Learnova product and launch readiness.</p>
         </div>
         <div className="admin-account">
           <div className="admin-avatar">{user?.email?.charAt(0).toUpperCase() || 'A'}</div>
@@ -36,7 +36,7 @@ function Admin() {
         <article className="admin-panel admin-product-panel">
           <div className="admin-panel-heading"><div><span className="site-eyebrow">Your product</span><h2>Published paper</h2></div><span className="admin-pill">Storefront ready</span></div>
           <div className="admin-product-row">
-            <div className="admin-paper-thumb"><span>PRASHNAVALI</span><strong>GS<br />Paper II</strong><small>Practice Set</small></div>
+          <div className="admin-paper-thumb"><span>LEARNOVA</span><strong>GS<br />Paper II</strong><small>Practice Set</small></div>
             <div className="admin-product-info">
               <span>UPSC Civil Services · Mains</span>
               <h3>General Studies Paper II — Complete Question Set</h3>
