@@ -1,31 +1,35 @@
 import { createContext, useContext, useEffect, useState } from 'react'
+import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth'
+import { auth, isFirebaseConfigured } from '../lib/firebase.js'
 
 const AuthContext = createContext(null)
-const STORAGE_KEY = 'auth_user'
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(() => {
-    const stored = localStorage.getItem(STORAGE_KEY)
-    return stored ? JSON.parse(stored) : null
-  })
+  const [user, setUser] = useState(null)
+  const [loading, setLoading] = useState(isFirebaseConfigured)
 
   useEffect(() => {
-    if (user) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(user))
-    } else {
-      localStorage.removeItem(STORAGE_KEY)
-    }
-  }, [user])
+    if (!auth) return
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      setUser(firebaseUser)
+      setLoading(false)
+    })
+    return unsubscribe
+  }, [])
 
-  function login(userData) {
-    setUser(userData)
+  function login(email, password) {
+    if (!auth) {
+      return Promise.reject(new Error('Firebase is not configured yet — add your project keys to .env.'))
+    }
+    return signInWithEmailAndPassword(auth, email, password)
   }
 
   function logout() {
-    setUser(null)
+    if (!auth) return Promise.resolve()
+    return signOut(auth)
   }
 
-  const value = { user, isAuthenticated: !!user, login, logout }
+  const value = { user, isAuthenticated: !!user, loading, login, logout }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

@@ -1,7 +1,9 @@
 function Footer() {
   return (
-    <footer className="footer">
-      <p>&copy; {new Date().getFullYear()} Question Paper Website</p>
+    <footer className="site-footer">
+      <span>&copy; {new Date().getFullYear()} Prashnavali</span>
+      <p>Focused practice resources for aspirants who want to write better answers.</p>
+      <a href="mailto:support@prashnavali.in">Need help?</a>
     </footer>
   )
 }

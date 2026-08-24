@@ -4,13 +4,13 @@ import Footer from '../components/Footer.jsx'
 
 function MainLayout() {
   return (
-    <>
+    <div className="site-shell">
       <Navbar />
-      <main>
+      <main className="site-main">
         <Outlet />
       </main>
       <Footer />
-    </>
+    </div>
   )
 }
 
