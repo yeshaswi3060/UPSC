@@ -494,7 +494,7 @@ function validateQuestion(input) {
 
 let vite;
 if (!isProduction) vite = await (await import('vite')).createServer({ server: { middlewareMode: true }, appType: 'spa' });
-const server = http.createServer(async (req, res) => {
+export const requestHandler = async (req, res) => {
   if (req.url.startsWith('/api/')) return api(req, res);
   if (vite) return vite.middlewares(req, res);
   const url = new URL(req.url, 'http://localhost');
@@ -508,5 +508,9 @@ const server = http.createServer(async (req, res) => {
   const type = { '.html':'text/html', '.js':'text/javascript', '.css':'text/css', '.svg':'image/svg+xml', '.png':'image/png', '.webp':'image/webp' }[ext] || 'application/octet-stream';
   res.writeHead(200, { 'Content-Type': type, 'X-Content-Type-Options':'nosniff' });
   createReadStream(file).pipe(res);
-});
-server.listen(port, host, () => console.log(`CivilPrelims running at http://${host}:${port} (${checkoutMode()} checkout)`));
+};
+
+if (!process.env.VERCEL) {
+  const server = http.createServer(requestHandler);
+  server.listen(port, host, () => console.log(`CivilPrelims running at http://${host}:${port} (${checkoutMode()} checkout)`));
+}
