@@ -67,6 +67,9 @@ const configuredLive = Boolean(
   process.env.PUBLIC_URL?.startsWith('https://') &&
   process.env.ADMIN_PASSWORD &&
   process.env.SESSION_SECRET
+  // A Vercel function's /tmp directory is not durable. Do not ever accept
+  // real payments there unless the shared Firebase store connected correctly.
+  && (!process.env.VERCEL || firebaseDb)
 );
 const demoMode = !isProduction && !configuredLive;
 const demoPdf = path.join(root, 'output', 'pdf', 'civilprelims-demo-paper.pdf');
@@ -286,38 +289,22 @@ async function api(req, res) {
         try { await sendAccessEmail(order, decrypt(order.accessCodeEncrypted), `${order.id}-recovery-${crypto.randomUUID()}`); }
         catch { /* keep response neutral */ }
       }
-      if (p === '/api/login' && req.method === 'POST') {
-        limit(req, 'login', 10);
-        const { identifier = '', secret = '' } = await readJson(req);
-        const normalized = String(identifier).trim().toLowerCase();
-        const adminPassword = process.env.ADMIN_PASSWORD || 'change-this-admin-password';
-        if (String(secret) === adminPassword && String(secret).length >= 8) {
-          await createSession(req, res, 'admin');
-          return json(res, 200, { ok: true, role: 'admin', redirect: '/admin' });
-        }
-        const email = normalized;
-        const order = state.orders.find((item) => paidOrder(item) && item.email === email && verifyAccessCode(String(secret), item.accessCodeHash));
-        if (!order) return fail(res, 401, 'We could not verify those details. Use your purchase email and access code, or the admin password.');
-        const role = state.userRoles[email] === 'admin' ? 'admin' : 'student';
-        await createSession(req, res, role, email);
-        return json(res, 200, { ok: true, role, redirect: role === 'admin' ? '/admin' : '/library' });
-      }
-      if (p === '/api/google-login' && req.method === 'POST') {
-        limit(req, 'google-login', 8);
-        const { idToken = '' } = await body(req);
-        const apiKey = process.env.VITE_FIREBASE_API_KEY;
-        if (!apiKey || !idToken) return fail(res, 400, 'Google sign-in is not configured.');
-        const lookup = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(apiKey)}`, { method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({ idToken }) });
-        const result = await lookup.json();
-        const email = String(result.users?.[0]?.email || '').toLowerCase();
-        if (!email) return fail(res, 401, 'Google account could not be verified.');
-        const order = state.orders.find(item => paidOrder(item) && item.email === email);
-        if (!order && state.userRoles[email] !== 'admin') return fail(res, 403, 'This Google account does not have a CivilPrelims purchase yet.');
-        const role = state.userRoles[email] === 'admin' ? 'admin' : 'student';
-        await createSession(req, res, role, email);
-        return json(res, 200, { ok:true, role, redirect: role === 'admin' ? '/admin' : '/library' });
-      }
       return json(res, 200, { ok:true, message:'If this email has a purchase, the access code has been sent.' });
+    }
+    if (p === '/api/google-login' && req.method === 'POST') {
+      limit(req, 'google-login', 8);
+      const { idToken = '' } = await body(req);
+      const apiKey = process.env.VITE_FIREBASE_API_KEY;
+      if (!apiKey || !idToken) return fail(res, 400, 'Google sign-in is not configured.');
+      const lookup = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(apiKey)}`, { method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({ idToken }) });
+      const result = await lookup.json().catch(() => ({}));
+      const email = String(result.users?.[0]?.email || '').toLowerCase();
+      if (!email) return fail(res, 401, 'Google account could not be verified.');
+      const order = paidOrder(email);
+      if (!order && state.userRoles[email] !== 'admin') return fail(res, 403, 'This Google account does not have a CivilPrelims purchase yet.');
+      const role = state.userRoles[email] === 'admin' ? 'admin' : 'student';
+      await createSession(req, res, role, email);
+      return json(res, 200, { ok:true, role, redirect: role === 'admin' ? '/admin' : '/library' });
     }
     if (p === '/api/checkout/order' && req.method === 'POST') {
       limit(req, 'checkout', 8);
