@@ -1,10 +1,13 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ArrowRight, BookOpen, Check, Download, FileText, Play, ShieldCheck } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
+import { api } from '../services/api';
 
 export default function StudentDashboard() {
   const { catalog, session, loading, navigate } = useStore();
   const [readerOpen, setReaderOpen] = useState(false);
+  const [profile, setProfile] = useState(null);
+  useEffect(() => { if (session?.role === 'student') api('/api/profile').then(setProfile).catch(() => {}); }, [session?.role]);
   if (loading) return <main className="route-gate"><p>Opening your library…</p></main>;
   if (session?.role !== 'student' || !session.hasPurchase) return <main className="route-gate"><div className="section-kicker">STUDENT LIBRARY</div><h1>Your paper is waiting.</h1><p>Sign in with the email and access code from your purchase.</p><button className="btn btn-coral" onClick={() => navigate('login')}>Student sign in <ArrowRight size={18}/></button></main>;
   return <main className="library-page"><div className="container">
@@ -14,6 +17,6 @@ export default function StudentDashboard() {
     {readerOpen && <div className="pdf-reader"><div><strong>Paper reader</strong><button onClick={() => setReaderOpen(false)}>Close</button></div><iframe src="/api/pdf" title="Main practice paper PDF"/></div>}
     <div className="library-content-heading subjects-heading"><span>02 / SUBJECT PRACTICE</span><span>CHOOSE WHERE TO FOCUS</span></div>
     <div className="library-section-title"><h2>Start with a subject.</h2><p>Each test opens on its own page. Answer, submit, then read the reasoning.</p></div>
-    <div className="subject-library-grid">{catalog.subjects.map((subject, i) => <article className="subject-library-card" key={subject.id}><div className="subject-card-head"><span>{String(i+1).padStart(2,'0')}</span><Play size={20}/></div><h3>{subject.name}</h3><p>{subject.description}</p><div className="subject-card-foot"><span>{subject.count} {subject.count === 1 ? 'question' : 'questions'}</span><button disabled={!subject.count} onClick={() => navigate('test', subject.id)}>Start test <ArrowRight size={17}/></button></div></article>)}</div>
+    <div className="subject-library-grid">{catalog.subjects.map((subject, i) => { const latest = profile?.subjects?.find(item => item.id === subject.id); return <article className="subject-library-card" key={subject.id}><div className="subject-card-head"><span>{String(i+1).padStart(2,'0')}</span><Play size={20}/></div><h3>{subject.name}</h3><p>{subject.description}</p>{latest?.tests ? <div className="subject-result-chip"><strong>{latest.best}% best</strong><span>{latest.tests} previous {latest.tests === 1 ? 'attempt' : 'attempts'}</span></div> : <div className="subject-result-chip muted"><span>Not attempted yet</span></div>}<div className="subject-card-foot"><span>{subject.count} {subject.count === 1 ? 'question' : 'questions'}</span><button disabled={!subject.count} onClick={() => navigate('test', subject.id)}>{latest?.tests ? 'Retake test' : 'Start test'} <ArrowRight size={17}/></button></div></article>; })}</div>
   </div></main>;
 }

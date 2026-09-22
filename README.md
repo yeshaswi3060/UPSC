@@ -35,6 +35,8 @@ The browser requests a new order from the server. In live mode Razorpay opens fo
 
 Copy `.env.example` to `.env.local` and add real values before enabling live checkout. **Live checkout stays unavailable** until all required settings are present and admin uploads a finished PDF that differs from the demo file. Use a persistent `DATA_DIR` on a single long-running Node host; this implementation stores orders, scores and analytics in that directory. A stateless or multi-instance deployment needs a shared database and file store first.
 
+The current local environment also contains the Firebase web configuration from the existing **All-cloths** project (`mango-tree-tech`) in `.env.local` and `src/lib/firebaseConfig.js`. Firebase web keys are public client configuration; keep server secrets such as payment and email credentials in server-only environment variables. When a fresh Firebase project is available, replace the `VITE_FIREBASE_*` values together.
+
 The generated PDF in `output/pdf/civilprelims-demo-paper.pdf` is a local test document with only three questions. Replace it in Admin → Price & PDF with your reviewed paper before taking payments. The site labels test checkout and test orders and excludes them from revenue.
 
 ## Analytics definitions

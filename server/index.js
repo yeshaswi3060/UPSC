@@ -22,6 +22,7 @@ const secret = process.env.SESSION_SECRET || readFileSync(secretFile, 'utf8').tr
 const loadedState = existsSync(stateFile) ? JSON.parse(readFileSync(stateFile, 'utf8')) : null;
 let state = { ...structuredClone(SEED_STATE), ...(loadedState || {}) };
 state.analytics = { events: [], ...state.analytics };
+state.userRoles = { ...(state.userRoles || {}) };
 let saveQueue = Promise.resolve();
 const save = () => {
   const snapshot = JSON.stringify(state, null, 2);
@@ -39,7 +40,16 @@ if (loadedState && !loadedState.seedVersion) {
   await save();
 } else if (!loadedState) await save();
 
-const configuredLive = Boolean(process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET && process.env.RAZORPAY_WEBHOOK_SECRET && process.env.RESEND_API_KEY && process.env.FROM_EMAIL && process.env.PUBLIC_URL && process.env.ADMIN_PASSWORD && process.env.SESSION_SECRET);
+const configuredLive = Boolean(
+  process.env.RAZORPAY_KEY_ID?.startsWith('rzp_live_') &&
+  process.env.RAZORPAY_KEY_SECRET &&
+  process.env.RAZORPAY_WEBHOOK_SECRET &&
+  process.env.RESEND_API_KEY &&
+  process.env.FROM_EMAIL && !process.env.FROM_EMAIL.endsWith('@resend.dev') &&
+  process.env.PUBLIC_URL?.startsWith('https://') &&
+  process.env.ADMIN_PASSWORD &&
+  process.env.SESSION_SECRET
+);
 const demoMode = !isProduction && !configuredLive;
 const demoPdf = path.join(root, 'output', 'pdf', 'civilprelims-demo-paper.pdf');
 if (demoMode && !state.pdf && existsSync(demoPdf)) {
@@ -125,13 +135,18 @@ function decrypt(value) {
 }
 async function sendAccessEmail(order, accessCode, messageId = order.id) {
   if (!process.env.RESEND_API_KEY || !process.env.FROM_EMAIL) return false;
+  const paperName = state.pdf?.name || 'civilprelims-practice-paper.pdf';
+  const paperAttachment = existsSync(pdfFile) ? [{ filename: paperName, content: readFileSync(pdfFile).toString('base64') }] : [];
+  const loginUrl = `${process.env.PUBLIC_URL || 'your CivilPrelims website'}/login`;
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json', 'Idempotency-Key': `civilprelims-access-${messageId}` },
     body: JSON.stringify({
       from: process.env.FROM_EMAIL, to: [order.email],
-      subject: 'Your CivilPrelims paper access',
-      text: `Thank you for your purchase. Sign in at ${process.env.PUBLIC_URL || 'your CivilPrelims website'}/login with ${order.email} and this access code: ${accessCode}. Keep this code private. Your PDF and subject tests are in your library.`
+      subject: 'Your CivilPrelims paper and access code',
+      text: `Your CivilPrelims access is ready.\n\nSign-in email: ${order.email}\nAccess code: ${accessCode}\n\nOpen your student library: ${loginUrl}\n\nYour practice paper is attached to this email. Keep this access code private.`,
+      html: `<div style="font-family:Arial,sans-serif;color:#173d34;line-height:1.6"><h2>Your CivilPrelims access is ready</h2><p>Thank you for your purchase. Your practice paper is attached.</p><div style="background:#f2f5ed;border:1px solid #d6e1d2;padding:18px;margin:20px 0"><p style="margin:0"><strong>Sign-in email</strong><br>${order.email}</p><p style="margin:14px 0 0"><strong>Access code</strong><br><span style="font-size:22px;letter-spacing:2px">${accessCode}</span></p></div><p><a href="${loginUrl}" style="display:inline-block;background:#f4775b;color:#173d34;padding:12px 18px;text-decoration:none;font-weight:bold">Open your student library</a></p><p style="font-size:12px;color:#5c7167">Keep this access code private. The same paper and subject tests are also available in your library.</p></div>`,
+      attachments: paperAttachment
     })
   });
   if (!response.ok) throw new Error('Access email could not be sent.');
@@ -207,7 +222,7 @@ async function api(req, res) {
       res.setHeader('Set-Cookie', sessionCookie(req, '', 0));
       return json(res, 200, { ok: true });
     }
-    if (p === '/api/admin/login' && req.method === 'POST') {
+      if (p === '/api/admin/login' && req.method === 'POST') {
       limit(req, 'admin', 6);
       const input = await body(req);
       const loopback = ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress);
@@ -235,6 +250,37 @@ async function api(req, res) {
       if (order && process.env.RESEND_API_KEY && process.env.FROM_EMAIL) {
         try { await sendAccessEmail(order, decrypt(order.accessCodeEncrypted), `${order.id}-recovery-${crypto.randomUUID()}`); }
         catch { /* keep response neutral */ }
+      }
+      if (p === '/api/login' && req.method === 'POST') {
+        limit(req, 'login', 10);
+        const { identifier = '', secret = '' } = await readJson(req);
+        const normalized = String(identifier).trim().toLowerCase();
+        const adminPassword = process.env.ADMIN_PASSWORD || 'change-this-admin-password';
+        if (String(secret) === adminPassword && String(secret).length >= 8) {
+          await createSession(req, res, 'admin');
+          return json(res, 200, { ok: true, role: 'admin', redirect: '/admin' });
+        }
+        const email = normalized;
+        const order = state.orders.find((item) => paidOrder(item) && item.email === email && verifyAccessCode(String(secret), item.accessCodeHash));
+        if (!order) return fail(res, 401, 'We could not verify those details. Use your purchase email and access code, or the admin password.');
+        const role = state.userRoles[email] === 'admin' ? 'admin' : 'student';
+        await createSession(req, res, role, email);
+        return json(res, 200, { ok: true, role, redirect: role === 'admin' ? '/admin' : '/library' });
+      }
+      if (p === '/api/google-login' && req.method === 'POST') {
+        limit(req, 'google-login', 8);
+        const { idToken = '' } = await body(req);
+        const apiKey = process.env.VITE_FIREBASE_API_KEY;
+        if (!apiKey || !idToken) return fail(res, 400, 'Google sign-in is not configured.');
+        const lookup = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(apiKey)}`, { method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({ idToken }) });
+        const result = await lookup.json();
+        const email = String(result.users?.[0]?.email || '').toLowerCase();
+        if (!email) return fail(res, 401, 'Google account could not be verified.');
+        const order = state.orders.find(item => paidOrder(item) && item.email === email);
+        if (!order && state.userRoles[email] !== 'admin') return fail(res, 403, 'This Google account does not have a CivilPrelims purchase yet.');
+        const role = state.userRoles[email] === 'admin' ? 'admin' : 'student';
+        await createSession(req, res, role, email);
+        return json(res, 200, { ok:true, role, redirect: role === 'admin' ? '/admin' : '/library' });
       }
       return json(res, 200, { ok:true, message:'If this email has a purchase, the access code has been sent.' });
     }
@@ -363,7 +409,7 @@ async function api(req, res) {
           const ownOrders = state.orders.filter(o => o.status === 'paid' && o.email === email);
           const attempts = state.attempts.filter(a => a.email === email);
           const lastEvent = state.analytics.events.filter(e => e.email === email).at(-1);
-          return { email, phone:ownOrders[0]?.phone || '', joinedAt:ownOrders.at(-1)?.paidAt, purchases:ownOrders.length, paidRevenue:ownOrders.filter(o => o.mode === 'live').reduce((n,o) => n + o.amount,0), tests:attempts.length, averageScore:attempts.length ? Math.round(attempts.reduce((n,a) => n + a.correct / Math.max(a.total,1) * 100,0) / attempts.length) : null, lastActive:lastEvent?.at || ownOrders[0]?.paidAt, lastSubject:attempts[0]?.subjectName || null, testMode:ownOrders.every(o => o.mode === 'test') };
+          return { email, phone:ownOrders[0]?.phone || '', accessCode:ownOrders[0]?.accessCodeEncrypted ? decrypt(ownOrders[0].accessCodeEncrypted) : '', role:state.userRoles[email] || 'student', joinedAt:ownOrders.at(-1)?.paidAt, purchases:ownOrders.length, paidRevenue:ownOrders.filter(o => o.mode === 'live').reduce((n,o) => n + o.amount,0), tests:attempts.length, averageScore:attempts.length ? Math.round(attempts.reduce((n,a) => n + a.correct / Math.max(a.total,1) * 100,0) / attempts.length) : null, lastActive:lastEvent?.at || ownOrders[0]?.paidAt, lastSubject:attempts[0]?.subjectName || null, testMode:ownOrders.every(o => o.mode === 'test') };
         });
         return json(res, 200, { ok:true, range, purchases:paid.length, testPurchases:testPaid.length, revenue:paid.reduce((n,o) => n + o.amount,0), lifetimePurchases:state.orders.filter(o => o.status === 'paid' && o.mode === 'live').length, lifetimeRevenue:state.orders.filter(o => o.status === 'paid' && o.mode === 'live').reduce((n,o) => n + o.amount,0), lifetimeStudents:new Set(state.orders.filter(o => o.status === 'paid' && o.mode === 'live').map(o => o.email)).size, totalTestAttempts:state.attempts.length, visitors:visitors.size, pageViews:events.filter(e => e.type === 'page_view').length, buyClicks:interested.size, checkouts:orders.length, checkoutVisitors:checkoutVisitors.size, clickNoPurchase, conversion:visitors.size ? Math.round(new Set(paid.map(o => o.visitorId).filter(Boolean)).size / visitors.size * 1000) / 10 : 0, daily, topPages, customers:customers.sort((a,b) => b.lastActive.localeCompare(a.lastActive)), orders:state.orders.filter(o => o.status === 'paid').map(publicOrder).slice(0, 100), questions:state.questions, config:state.config, pdf:state.pdf, updates:state.updates });
       }
@@ -373,7 +419,14 @@ async function api(req, res) {
         const orders = state.orders.filter(o => o.status === 'paid' && o.email === email).map(publicOrder);
         const attempts = state.attempts.filter(a => a.email === email);
         const events = state.analytics.events.filter(e => e.email === email && ['test_completed','pdf_view','pdf_download','checkout_started','purchase'].includes(e.type)).slice(-50).reverse();
-        return json(res, 200, { ok:true, email, orders, attempts, events });
+        return json(res, 200, { ok:true, email, role:state.userRoles[email] || 'student', accessCode:orders[0]?.accessCodeEncrypted ? decrypt(orders[0].accessCodeEncrypted) : '', orders, attempts, events });
+      }
+      if (p.startsWith('/api/admin/students/') && req.method === 'PUT') {
+        const email = decodeURIComponent(p.slice('/api/admin/students/'.length));
+        const input = await body(req);
+        if (!['student','admin'].includes(input.role)) return fail(res, 400, 'Role must be student or admin.');
+        state.userRoles[email] = input.role; await save();
+        return json(res, 200, { ok:true, email, role:input.role });
       }
       if (p === '/api/admin/updates' && req.method === 'POST') {
         const input = await body(req);

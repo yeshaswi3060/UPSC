@@ -21,3 +21,11 @@
 @media(min-width:1100px){.nav-menu{gap:27px}.nav-menu button{font-size:12px}.hero-layout{gap:50px}.hero-art{height:580px}.sheet{width:315px;height:425px}.sheet-heading{font-size:52px}.price-stamp{right:calc(50% - 220px)}.subject-library-grid{grid-template-columns:repeat(3,1fr)}.pdf-feature{grid-template-columns:350px 1fr}.test-layout{grid-template-columns:235px 1fr}.result-layout{grid-template-columns:320px 1fr}}
 @media(max-width:369px){.nav-buy{font-size:9px;padding:9px 7px}.brand-word{font-size:17px}.brand-icon{width:31px;height:31px}.hero h1{font-size:43px}.hero-art{height:390px}.sheet{width:205px;height:287px}.sheet-heading{font-size:32px}.price-stamp{right:calc(50% - 143px)}.hero-actions .btn{font-size:13px}.test-question-actions .btn{font-size:10px}.value-strip strong{font-size:10px}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*:before,*:after{transition-duration:.01ms!important;animation-duration:.01ms!important}}
+
+/* Mobile test flow: show the question before the navigator so learners see the task immediately. */
+.subject-result-chip{display:flex;align-items:center;gap:8px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:10px 0;margin:4px 0 13px;color:var(--pine)}
+.subject-result-chip strong{font-size:12px}.subject-result-chip span{font-size:10px;color:var(--muted)}.subject-result-chip.muted{color:var(--muted)}
+.google-login{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;min-height:48px;margin-top:12px;border:1px solid var(--line);background:#fff;color:var(--pine);font-size:12px;font-weight:800}.google-mark{display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:#fff;color:#4285f4;font-weight:900;font-size:15px}
+.access-card label span{display:block;color:var(--muted);font-size:10px;font-weight:500;line-height:1.45;margin-top:3px}
+.test-question-card{order:1}.test-sidebar{order:2}
+@media(min-width:700px){.test-question-card{order:2}.test-sidebar{order:1}}
