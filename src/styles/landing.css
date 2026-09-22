@@ -1,0 +1,216 @@
+/* ==========================================================================
+   LANDING PAGE COMPONENTS (Topics, Interactive Question, Reviews, FAQs)
+   ========================================================================== */
+
+/* Topics Grid */
+.topics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 1.75rem;
+}
+
+.topic-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 1.75rem;
+  transition: all 0.25s ease;
+}
+
+.topic-card:hover {
+  transform: translateY(-3px);
+  border-color: var(--border-gold);
+  box-shadow: var(--shadow-md), 0 0 20px rgba(245, 158, 11, 0.08);
+}
+
+.topic-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.topic-icon-wrap {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: var(--gold-subtle);
+  color: var(--gold-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Sample Question Interactive Component */
+.question-box {
+  background: #0d1526;
+  border: 1px solid var(--border-gold);
+  border-radius: var(--radius-lg);
+  padding: 2.25rem;
+  margin-top: 2rem;
+  box-shadow: var(--shadow-lg);
+}
+
+.q-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.25rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border-subtle);
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.q-text {
+  font-size: 1.05rem;
+  color: #f1f5f9;
+  line-height: 1.75;
+  white-space: pre-line;
+  margin-bottom: 1.5rem;
+}
+
+.q-options {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+}
+
+.q-opt-btn {
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 0.875rem 1.25rem;
+  color: #cbd5e1;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 0.95rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.q-opt-btn:hover {
+  background: rgba(26, 38, 66, 0.9);
+  border-color: rgba(245, 158, 11, 0.4);
+}
+
+.q-opt-btn.selected-correct {
+  background: rgba(16, 185, 129, 0.15);
+  border-color: var(--emerald);
+  color: #a7f3d0;
+}
+
+.q-opt-btn.selected-wrong {
+  background: rgba(244, 63, 94, 0.15);
+  border-color: var(--rose);
+  color: #fecdd3;
+}
+
+.q-explanation {
+  margin-top: 1.5rem;
+  padding: 1.25rem;
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: var(--radius-sm);
+  animation: fadeIn 0.3s ease;
+}
+
+.q-explanation h4 {
+  color: var(--gold-light);
+  margin-bottom: 0.5rem;
+  font-size: 0.95rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.q-explanation p {
+  color: #cbd5e1;
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+/* Testimonial Cards */
+.testimonial-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.testimonial-quote {
+  font-style: italic;
+  color: #cbd5e1;
+  font-size: 0.95rem;
+  margin-bottom: 1.25rem;
+  line-height: 1.65;
+}
+
+.topper-info {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+}
+
+.topper-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 2px solid var(--gold-primary);
+  object-fit: cover;
+}
+
+.topper-name {
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+.topper-rank {
+  font-size: 0.775rem;
+  color: var(--gold-light);
+  font-weight: 600;
+}
+
+/* FAQ Accordion */
+.faq-list {
+  max-width: 800px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.faq-item {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  transition: border-color 0.2s ease;
+}
+
+.faq-question {
+  padding: 1.25rem 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 1.05rem;
+  color: var(--text-main);
+  background: transparent;
+  width: 100%;
+  text-align: left;
+  border: none;
+}
+
+.faq-question:hover {
+  color: var(--gold-light);
+}
+
+.faq-answer {
+  padding: 0 1.5rem 1.25rem;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  line-height: 1.7;
+}

@@ -1,0 +1,67 @@
+/* ==========================================================================
+   CIVILPRELIMS DESIGN TOKENS & SYSTEM VARIABLES (Handcrafted Luxury System)
+   ========================================================================== */
+
+:root {
+  /* Surface & Base Colors */
+  --bg-primary: #060911;
+  --bg-secondary: #0a0f1d;
+  --bg-surface: #0e1628;
+  --bg-surface-elevated: #152038;
+  --bg-card: rgba(14, 22, 40, 0.88);
+  --bg-card-hover: rgba(22, 34, 60, 0.96);
+  --bg-glass: rgba(14, 22, 40, 0.72);
+  --bg-subtle: rgba(255, 255, 255, 0.035);
+  
+  /* Imperial Gold & Rich Amber (Bespoke Academic Foil) */
+  --gold-primary: #f59e0b;
+  --gold-light: #fbbf24;
+  --gold-dark: #b45309;
+  --gold-shimmer: linear-gradient(90deg, #d97706 0%, #fbbf24 50%, #d97706 100%);
+  --gold-subtle: rgba(245, 158, 11, 0.12);
+  --gold-gradient: linear-gradient(135deg, #f59e0b 0%, #fde68a 50%, #d97706 100%);
+  --gold-glow: rgba(245, 158, 11, 0.28);
+  --gold-glow-intense: rgba(245, 158, 11, 0.5);
+
+  /* Semantic Feedback Colors */
+  --emerald: #10b981;
+  --emerald-subtle: rgba(16, 185, 129, 0.12);
+  --emerald-border: rgba(16, 185, 129, 0.35);
+  --rose: #f43f5e;
+  --rose-subtle: rgba(244, 63, 94, 0.12);
+  --rose-border: rgba(244, 63, 94, 0.35);
+  --indigo: #6366f1;
+
+  /* Typography Scale & Colors */
+  --text-main: #f8fafc;
+  --text-muted: #94a3b8;
+  --text-subtle: #64748b;
+  --text-gold: #fcd34d;
+  --text-dark: #070b14;
+
+  /* Borders & Dividers */
+  --border-subtle: rgba(255, 255, 255, 0.07);
+  --border-medium: rgba(255, 255, 255, 0.14);
+  --border-gold: rgba(245, 158, 11, 0.28);
+  --border-gold-strong: rgba(245, 158, 11, 0.6);
+
+  /* Elevation & Shadows */
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.45);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.55);
+  --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.7);
+  --shadow-gold: 0 10px 35px rgba(245, 158, 11, 0.22);
+  --shadow-book: 0 20px 50px rgba(0, 0, 0, 0.8), 0 0 40px rgba(245, 158, 11, 0.15);
+
+  /* Typography Font Families */
+  --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-serif: 'Newsreader', Georgia, serif;
+  --font-prestige: 'Cinzel', serif;
+
+  /* Spatial Scales */
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 22px;
+  --radius-full: 9999px;
+  --container-max: 1240px;
+}

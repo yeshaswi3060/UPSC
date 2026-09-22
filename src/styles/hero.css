@@ -1,0 +1,223 @@
+/* ==========================================================================
+   HERO & QUICK CHECKOUT STYLES
+   ========================================================================== */
+
+.hero-section {
+  padding: 4.5rem 0 3.5rem;
+  position: relative;
+}
+
+.hero-grid {
+  display: grid;
+  grid-template-columns: 1.15fr 0.85fr;
+  gap: 3.5rem;
+  align-items: center;
+}
+
+.hero-title {
+  font-size: 3.4rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  margin: 1.25rem 0 1.25rem;
+  line-height: 1.12;
+}
+
+.hero-subtitle {
+  font-size: 1.15rem;
+  color: #cbd5e1;
+  margin-bottom: 2rem;
+  line-height: 1.65;
+  max-width: 580px;
+}
+
+.hero-highlights {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.25rem;
+  margin-bottom: 2rem;
+  padding: 1.25rem;
+  background: rgba(15, 23, 42, 0.6);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+}
+
+.highlight-item {
+  display: flex;
+  flex-direction: column;
+}
+
+.highlight-val {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--gold-light);
+}
+
+.highlight-label {
+  font-size: 0.775rem;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+/* Checkout Lead Card (Hero Right) */
+.checkout-card {
+  background: linear-gradient(180deg, rgba(20, 31, 56, 0.95) 0%, rgba(13, 21, 38, 0.98) 100%);
+  border: 1px solid var(--border-gold);
+  border-radius: var(--radius-lg);
+  padding: 2.25rem;
+  box-shadow: var(--shadow-lg), 0 0 35px rgba(245, 158, 11, 0.12);
+  position: relative;
+  overflow: hidden;
+}
+
+.checkout-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: var(--gold-gradient);
+}
+
+.pricing-header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  margin: 1rem 0 0.5rem;
+}
+
+.price-main {
+  font-size: 3rem;
+  font-weight: 800;
+  color: var(--gold-light);
+  line-height: 1;
+}
+
+.price-original {
+  font-size: 1.4rem;
+  color: var(--text-subtle);
+  text-decoration: line-through;
+  font-weight: 500;
+}
+
+.discount-badge {
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--gold-light);
+  padding: 0.2rem 0.6rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+/* Quick Lead Form */
+.quick-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin: 1.5rem 0;
+}
+
+/* Perks List inside Checkout Card */
+.perks-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  margin: 1.25rem 0;
+  font-size: 0.875rem;
+  color: #cbd5e1;
+}
+
+.perk-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.perk-item svg {
+  color: var(--emerald);
+  flex-shrink: 0;
+}
+
+/* Urgency Timer Box */
+.urgency-timer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.6rem;
+  background: rgba(244, 63, 94, 0.08);
+  border: 1px dashed rgba(244, 63, 94, 0.35);
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  color: #fca5a5;
+  margin-top: 0.75rem;
+  font-weight: 600;
+}
+
+/* Social Proof Ticker */
+.social-proof-ticker {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid var(--border-subtle);
+  padding: 0.55rem 1rem;
+  border-radius: var(--radius-full);
+  font-size: 0.825rem;
+  color: var(--text-muted);
+  width: fit-content;
+  margin-top: 1.25rem;
+}
+
+/* Sticky Bottom Mobile Bar */
+.mobile-sticky-bar {
+  display: none;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(7, 11, 20, 0.95);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-top: 1px solid var(--border-gold);
+  padding: 0.75rem 1.25rem;
+  z-index: 45;
+  box-shadow: 0 -5px 20px rgba(0, 0, 0, 0.5);
+}
+
+.mobile-bar-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+@media (max-width: 992px) {
+  .hero-grid {
+    grid-template-columns: 1fr;
+    gap: 2.5rem;
+  }
+  
+  .hero-title {
+    font-size: 2.75rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .hero-title {
+    font-size: 2.2rem;
+  }
+
+  .hero-highlights {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+
+  .mobile-sticky-bar {
+    display: block;
+  }
+
+  body {
+    padding-bottom: 4.5rem;
+  }
+}

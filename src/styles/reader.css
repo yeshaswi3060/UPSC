@@ -1,0 +1,90 @@
+/* ==========================================================================
+   IN-APP PDF READER & EXAM SIMULATION STYLES
+   ========================================================================== */
+
+.reader-modal-content {
+  max-width: 1000px;
+  width: 98%;
+  height: 92vh;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.reader-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.875rem 1.25rem;
+  background: #070b14;
+  border-bottom: 1px solid var(--border-gold);
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.reader-viewport {
+  flex: 1;
+  overflow-y: auto;
+  padding: 2.5rem 1.5rem;
+  display: flex;
+  justify-content: center;
+  transition: background 0.2s ease;
+}
+
+.reader-paper-sheet {
+  max-width: 820px;
+  width: 100%;
+  border-radius: var(--radius-sm);
+  padding: 3rem 2.5rem;
+  box-shadow: 0 10px 35px rgba(0, 0, 0, 0.5);
+  position: relative;
+  transform-origin: top center;
+  transition: transform 0.15s ease;
+}
+
+.reader-watermark {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(-30deg);
+  font-size: 2.5rem;
+  font-weight: 800;
+  pointer-events: none;
+  white-space: nowrap;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  z-index: 0;
+}
+
+/* Practice Simulation Specifics */
+.test-header-timer {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.85rem;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid var(--border-gold);
+  border-radius: var(--radius-sm);
+  font-weight: 700;
+  color: var(--gold-light);
+}
+
+.test-palette-grid {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.palette-number-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}

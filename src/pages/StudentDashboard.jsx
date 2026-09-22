@@ -1,0 +1,19 @@
+import React, { useState } from 'react';
+import { ArrowRight, BookOpen, Check, Download, FileText, Play, ShieldCheck } from 'lucide-react';
+import { useStore } from '../context/StoreContext';
+
+export default function StudentDashboard() {
+  const { catalog, session, loading, navigate } = useStore();
+  const [readerOpen, setReaderOpen] = useState(false);
+  if (loading) return <main className="route-gate"><p>Opening your library…</p></main>;
+  if (session?.role !== 'student' || !session.hasPurchase) return <main className="route-gate"><div className="section-kicker">STUDENT LIBRARY</div><h1>Your paper is waiting.</h1><p>Sign in with the email and access code from your purchase.</p><button className="btn btn-coral" onClick={() => navigate('login')}>Student sign in <ArrowRight size={18}/></button></main>;
+  return <main className="library-page"><div className="container">
+    <div className="library-hero"><div><div className="section-kicker">YOUR STUDY SPACE / 2026</div><h1>Ready when<br/><em>you are.</em></h1><p>Your paper and subject practice are here whenever you need another round.</p><div className="library-account"><ShieldCheck size={17}/> Access linked to {session.email}</div><button className="library-profile-link" onClick={() => navigate('profile')}>See your daily scores and profile <ArrowRight size={17}/></button></div><div className="library-hero-art"><BookOpen size={70} strokeWidth={1.1}/><span>READ / PRACTISE / REVIEW</span></div></div>
+    <div className="library-content-heading"><span>01 / YOUR PAPER</span><span>KEEP IT CLOSE</span></div>
+    <section className="pdf-feature"><div className="pdf-cover"><div className="pdf-cover-top">CIVILPRELIMS <span>2026</span></div><div><small>THE PRACTICE KIT</small><strong>Read.<br/><i>Reason.</i><br/>Revise.</strong></div><div className="pdf-cover-bottom">PAPER PDF / EXPLAINED ANSWERS</div></div><div className="pdf-feature-copy"><span className="resource-type"><FileText size={17}/> MAIN PAPER PDF</span><h2>{catalog.config.paperLabel}</h2><p>Open it here to study or save it to your device. Explanations are included in the paper.</p><div className="resource-details"><span><Check size={16}/> Included with your purchase</span><span>{catalog.pdf ? (catalog.pdf.size < 1024 * 1024 ? Math.round(catalog.pdf.size / 1024) + ' KB PDF' : (catalog.pdf.size / 1024 / 1024).toFixed(1) + ' MB PDF') : 'Upload pending'}</span></div><div className="pdf-actions"><button className="btn btn-dark" onClick={() => setReaderOpen(!readerOpen)} disabled={!catalog.pdf}>{readerOpen ? 'Close reader' : 'Read online'} <ArrowRight size={17}/></button><a className="btn btn-outline" href="/api/pdf?download=1" download aria-disabled={!catalog.pdf} onClick={e => { if (!catalog.pdf) e.preventDefault(); }}><Download size={17}/> Download PDF</a></div></div></section>
+    {readerOpen && <div className="pdf-reader"><div><strong>Paper reader</strong><button onClick={() => setReaderOpen(false)}>Close</button></div><iframe src="/api/pdf" title="Main practice paper PDF"/></div>}
+    <div className="library-content-heading subjects-heading"><span>02 / SUBJECT PRACTICE</span><span>CHOOSE WHERE TO FOCUS</span></div>
+    <div className="library-section-title"><h2>Start with a subject.</h2><p>Each test opens on its own page. Answer, submit, then read the reasoning.</p></div>
+    <div className="subject-library-grid">{catalog.subjects.map((subject, i) => <article className="subject-library-card" key={subject.id}><div className="subject-card-head"><span>{String(i+1).padStart(2,'0')}</span><Play size={20}/></div><h3>{subject.name}</h3><p>{subject.description}</p><div className="subject-card-foot"><span>{subject.count} {subject.count === 1 ? 'question' : 'questions'}</span><button disabled={!subject.count} onClick={() => navigate('test', subject.id)}>Start test <ArrowRight size={17}/></button></div></article>)}</div>
+  </div></main>;
+}
