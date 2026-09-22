@@ -208,7 +208,7 @@ function limit(req, key, max = 12) {
 
 async function api(req, res) {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-  const p = url.pathname;
+  const p = url.pathname === '/api' && url.searchParams.get('__path') ? `/api/${url.searchParams.get('__path')}` : url.pathname;
   if (!p.startsWith('/api/')) return false;
   try {
     if (!['GET', 'HEAD'].includes(req.method)) ensureOrigin(req);
