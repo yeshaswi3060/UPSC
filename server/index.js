@@ -261,6 +261,21 @@ async function api(req, res) {
       await createSession(req, res, 'student', email);
       return json(res, 200, { ok: true });
     }
+    if (p === '/api/login' && req.method === 'POST') {
+      limit(req, 'login', 10);
+      const input = await body(req);
+      const identifier = String(input.identifier || '').trim().toLowerCase();
+      const credential = String(input.secret || '');
+      if (process.env.ADMIN_PASSWORD && same(credential, process.env.ADMIN_PASSWORD)) {
+        await createSession(req, res, 'admin');
+        return json(res, 200, { ok: true, role: 'admin', redirect: '/admin' });
+      }
+      const order = state.orders.find(item => item.status === 'paid' && item.email === identifier && same(item.accessCodeHash, hash(credential)));
+      if (!order) return fail(res, 401, 'We could not verify those details. Use your purchase email and access code, or the admin password.');
+      const role = state.userRoles[identifier] === 'admin' ? 'admin' : 'student';
+      await createSession(req, res, role, identifier);
+      return json(res, 200, { ok: true, role, redirect: role === 'admin' ? '/admin' : '/library' });
+    }
     if (p === '/api/student/recover' && req.method === 'POST') {
       limit(req, 'recover', 3);
       const input = await body(req);
