@@ -5,21 +5,38 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { SEED_STATE } from './seed.js';
+import { cert, getApps, initializeApp } from 'firebase-admin/app';
+import { getFirestore } from 'firebase-admin/firestore';
+import { getStorage } from 'firebase-admin/storage';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const localEnv = path.join(root, '.env.local');
 if (existsSync(localEnv)) process.loadEnvFile(localEnv);
+let firebaseDb = null;
+let firebaseBucket = null;
+try {
+  const encoded = process.env.FIREBASE_SERVICE_ACCOUNT_JSON_B64;
+  if (encoded) {
+    const serviceAccount = JSON.parse(Buffer.from(encoded, 'base64').toString('utf8'));
+    const app = getApps()[0] || initializeApp({ credential: cert(serviceAccount), storageBucket: process.env.VITE_FIREBASE_STORAGE_BUCKET });
+    firebaseDb = getFirestore(app);
+    firebaseBucket = getStorage(app).bucket();
+  }
+} catch (error) {
+  console.error('Firebase persistence unavailable:', error.message);
+}
 const isProduction = process.env.NODE_ENV === 'production';
 const host = process.env.HOST || (isProduction ? '0.0.0.0' : '127.0.0.1');
 const port = Number(process.env.PORT || 5174);
-const dataDir = path.resolve(process.env.DATA_DIR || path.join(root, '.civilprelims-data'));
+const dataDir = path.resolve(process.env.DATA_DIR || (process.env.VERCEL ? '/tmp/civilprelims-data' : path.join(root, '.civilprelims-data')));
 mkdirSync(dataDir, { recursive: true });
 const stateFile = path.join(dataDir, 'state.json');
 const pdfFile = path.join(dataDir, 'main-paper.pdf');
 const secretFile = path.join(dataDir, 'secret');
 if (!existsSync(secretFile)) await writeFile(secretFile, crypto.randomBytes(32).toString('hex'), { mode: 0o600 });
 const secret = process.env.SESSION_SECRET || readFileSync(secretFile, 'utf8').trim();
-const loadedState = existsSync(stateFile) ? JSON.parse(readFileSync(stateFile, 'utf8')) : null;
+const remoteState = firebaseDb ? (await firebaseDb.doc('app/state').get()).data()?.value : null;
+const loadedState = remoteState || (existsSync(stateFile) ? JSON.parse(readFileSync(stateFile, 'utf8')) : null);
 let state = { ...structuredClone(SEED_STATE), ...(loadedState || {}) };
 state.analytics = { events: [], ...state.analytics };
 state.userRoles = { ...(state.userRoles || {}) };
@@ -30,6 +47,7 @@ const save = () => {
     const temp = stateFile + '.tmp';
     await writeFile(temp, snapshot, { mode: 0o600 });
     await rename(temp, stateFile);
+    if (firebaseDb) await firebaseDb.doc('app/state').set({ value: state, updatedAt: new Date().toISOString() });
   });
   return saveQueue;
 };
@@ -57,7 +75,8 @@ if (demoMode && !state.pdf && existsSync(demoPdf)) {
   state.pdf = { name: 'Local test paper — 3 questions.pdf', size: statSync(pdfFile).size, updatedAt: new Date().toISOString(), demo: true };
   await save();
 }
-const checkoutMode = () => !state.pdf || !existsSync(pdfFile) ? 'unavailable' : configuredLive && !state.pdf.demo ? 'live' : demoMode ? 'test' : 'unavailable';
+const hasPdf = () => Boolean(state.pdf && (existsSync(pdfFile) || firebaseBucket));
+const checkoutMode = () => !hasPdf() ? 'unavailable' : configuredLive && !state.pdf.demo ? 'live' : demoMode ? 'test' : 'unavailable';
 const hash = (value) => crypto.createHash('sha256').update(String(value)).digest('hex');
 const same = (a, b) => {
   const x = Buffer.from(String(a)); const y = Buffer.from(String(b));
@@ -136,7 +155,8 @@ function decrypt(value) {
 async function sendAccessEmail(order, accessCode, messageId = order.id) {
   if (!process.env.RESEND_API_KEY || !process.env.FROM_EMAIL) return false;
   const paperName = state.pdf?.name || 'civilprelims-practice-paper.pdf';
-  const paperAttachment = existsSync(pdfFile) ? [{ filename: paperName, content: readFileSync(pdfFile).toString('base64') }] : [];
+  const paperBytes = existsSync(pdfFile) ? readFileSync(pdfFile) : (firebaseBucket && state.pdf ? (await firebaseBucket.file('main-paper.pdf').download())[0] : null);
+  const paperAttachment = paperBytes ? [{ filename: paperName, content: paperBytes.toString('base64') }] : [];
   const loginUrl = `${process.env.PUBLIC_URL || 'your CivilPrelims website'}/login`;
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
@@ -209,7 +229,7 @@ async function api(req, res) {
     }
     if (p === '/api/catalog' && req.method === 'GET') return json(res, 200, {
       ok: true, config: state.config, subjects: state.subjects.map(s => ({ ...s, count: state.questions.filter(q => q.subjectId === s.id).length })),
-      pdf: state.pdf && existsSync(pdfFile) ? state.pdf : null, checkoutMode: checkoutMode()
+      pdf: hasPdf() ? state.pdf : null, checkoutMode: checkoutMode()
     });
     if (p === '/api/session' && req.method === 'GET') {
       const session = getSession(req);
@@ -342,10 +362,11 @@ async function api(req, res) {
     if (p === '/api/pdf' && req.method === 'GET') {
       const session = requireRole(req);
       if (session.role !== 'admin' && !(session.role === 'student' && paidOrder(session.email))) return fail(res, 403, 'Purchase required.');
-      if (!state.pdf || !existsSync(pdfFile)) return fail(res, 404, 'Paper has not been uploaded yet.');
+      if (!hasPdf()) return fail(res, 404, 'Paper has not been uploaded yet.');
       await recordEvent(url.searchParams.get('download') === '1' ? 'pdf_download' : 'pdf_view', visitorFrom(req) || '', session.role === 'student' ? session.email : '');
-      res.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Length': String(state.pdf.size), 'Content-Disposition': `${url.searchParams.get('download') === '1' ? 'attachment' : 'inline'}; filename="civilprelims-paper.pdf"`, 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' });
-      createReadStream(pdfFile).pipe(res); return true;
+      const pdfBytes = existsSync(pdfFile) ? readFileSync(pdfFile) : (await firebaseBucket.file('main-paper.pdf').download())[0];
+      res.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Length': String(pdfBytes.length), 'Content-Disposition': `${url.searchParams.get('download') === '1' ? 'attachment' : 'inline'}; filename="civilprelims-paper.pdf"`, 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' });
+      res.end(pdfBytes); return true;
     }
     if (p.startsWith('/api/questions/') && req.method === 'GET') {
       const session = requireRole(req);
@@ -454,6 +475,7 @@ async function api(req, res) {
         const digest = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
         const isDemo = existsSync(demoPdf) && same(digest(data), digest(readFileSync(demoPdf)));
         const temp = pdfFile + '.tmp'; await writeFile(temp, data, { mode: 0o600 }); await rename(temp, pdfFile);
+        if (firebaseBucket) await firebaseBucket.file('main-paper.pdf').save(data, { resumable: false, metadata: { contentType: 'application/pdf' } });
         state.pdf = { name: String(input.name || 'Main paper.pdf').slice(0,120), size: data.length, updatedAt: new Date().toISOString(), demo:isDemo };
         await save(); return json(res, 200, { ok: true, pdf: state.pdf });
       }
