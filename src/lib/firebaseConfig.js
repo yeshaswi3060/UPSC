@@ -13,9 +13,11 @@ export const firebaseConfig = {
 
 // Firebase Auth only needs these values. Storage, messaging and Analytics are
 // optional for this app and should not disable the Google sign-in button.
-export const hasFirebaseConfig = [
-  firebaseConfig.apiKey,
-  firebaseConfig.authDomain,
-  firebaseConfig.projectId,
-  firebaseConfig.appId
-].every(Boolean);
+export const missingFirebaseAuthConfig = Object.entries({
+  VITE_FIREBASE_API_KEY: firebaseConfig.apiKey,
+  VITE_FIREBASE_AUTH_DOMAIN: firebaseConfig.authDomain,
+  VITE_FIREBASE_PROJECT_ID: firebaseConfig.projectId,
+  VITE_FIREBASE_APP_ID: firebaseConfig.appId
+}).filter(([, value]) => !value).map(([key]) => key);
+
+export const hasFirebaseConfig = missingFirebaseAuthConfig.length === 0;

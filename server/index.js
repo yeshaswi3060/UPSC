@@ -85,6 +85,23 @@ const same = (a, b) => {
   const x = Buffer.from(String(a)); const y = Buffer.from(String(b));
   return x.length === y.length && crypto.timingSafeEqual(x, y);
 };
+async function consumeAdminRecoveryCode(email, code) {
+  if (firebaseDb) {
+    const recoveryRef = firebaseDb.collection('authRecovery').doc('admin');
+    return firebaseDb.runTransaction(async transaction => {
+      const snapshot = await transaction.get(recoveryRef);
+      const recovery = snapshot.data();
+      if (!recovery || recovery.email !== email || recovery.expiresAt <= Date.now() || !same(recovery.codeHash, hash(code))) return false;
+      transaction.delete(recoveryRef);
+      return true;
+    });
+  }
+  const recovery = state.adminRecovery;
+  if (!recovery || recovery.email !== email || recovery.expiresAt <= Date.now() || !same(recovery.codeHash, hash(code))) return false;
+  state.adminRecovery = null;
+  await save();
+  return true;
+}
 const token = () => crypto.randomBytes(24).toString('base64url');
 const sessionCookie = (req, value, age = 2592000) => `cp_session=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${age}${req.headers['x-forwarded-proto'] === 'https' ? '; Secure' : ''}`;
 const visitorCookie = (req, value) => `cp_visitor=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000${req.headers['x-forwarded-proto'] === 'https' ? '; Secure' : ''}`;
@@ -173,6 +190,22 @@ async function sendAccessEmail(order, accessCode, messageId = order.id) {
     })
   });
   if (!response.ok) throw new Error('Access email could not be sent.');
+  return true;
+}
+async function sendAdminRecoveryEmail(email, recoveryCode) {
+  if (!process.env.RESEND_API_KEY || !process.env.FROM_EMAIL) return false;
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json', 'Idempotency-Key': `civilprelims-admin-recovery-${crypto.randomUUID()}` },
+    body: JSON.stringify({
+      from: process.env.FROM_EMAIL,
+      to: [email],
+      subject: 'Your CivilPrelims admin sign-in code',
+      text: `Your one-time CivilPrelims admin sign-in code is ${recoveryCode}. It expires in 10 minutes. If you did not request this code, ignore this email.`,
+      html: `<p>Your one-time CivilPrelims admin sign-in code is:</p><p style="font-size:24px;font-weight:bold;letter-spacing:3px">${recoveryCode}</p><p>It expires in 10 minutes. If you did not request this code, ignore this email.</p>`
+    })
+  });
+  if (!response.ok) throw new Error(`Resend rejected the admin recovery email (HTTP ${response.status}).`);
   return true;
 }
 async function finishOrder(order) {
@@ -273,6 +306,11 @@ async function api(req, res) {
         await createSession(req, res, 'admin');
         return json(res, 200, { ok: true, role: 'admin', redirect: '/admin' });
       }
+      const adminEmail = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
+      if (adminEmail && identifier === adminEmail && await consumeAdminRecoveryCode(identifier, credential)) {
+        await createSession(req, res, 'admin', identifier);
+        return json(res, 200, { ok: true, role: 'admin', redirect: '/admin' });
+      }
       const order = state.orders.find(item => item.status === 'paid' && item.email === identifier && same(item.accessCodeHash, hash(credential)));
       if (!order) return fail(res, 401, 'We could not verify those details. Use your purchase email and access code, or the admin password.');
       const role = state.userRoles[identifier] === 'admin' ? 'admin' : 'student';
@@ -285,11 +323,25 @@ async function api(req, res) {
       const email = String(input.email || '').trim().toLowerCase();
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return fail(res, 400, 'Enter a valid purchase email.');
       const order = paidOrder(email);
-      if (order && process.env.RESEND_API_KEY && process.env.FROM_EMAIL) {
+      const adminEmail = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
+      if (email === adminEmail && adminEmail && process.env.RESEND_API_KEY && process.env.FROM_EMAIL) {
+        const recoveryCode = String(crypto.randomInt(100000, 1000000));
+        const recovery = { email, codeHash: hash(recoveryCode), expiresAt: Date.now() + 10 * 60 * 1000 };
+        const recoveryRef = firebaseDb?.collection('authRecovery').doc('admin');
+        if (recoveryRef) await recoveryRef.set(recovery);
+        else { state.adminRecovery = recovery; await save(); }
+        try {
+          await sendAdminRecoveryEmail(email, recoveryCode);
+        } catch (error) {
+          if (recoveryRef) await recoveryRef.delete();
+          else { state.adminRecovery = null; await save(); }
+          console.error('Admin recovery email delivery failed:', error.message);
+        }
+      } else if (order && process.env.RESEND_API_KEY && process.env.FROM_EMAIL) {
         try { await sendAccessEmail(order, decrypt(order.accessCodeEncrypted), `${order.id}-recovery-${crypto.randomUUID()}`); }
-        catch { /* keep response neutral */ }
+        catch (error) { console.error('Purchase recovery email delivery failed:', error.message); }
       }
-      return json(res, 200, { ok:true, message:'If this email has a purchase, the access code has been sent.' });
+      return json(res, 200, { ok:true, message:'If this is an eligible CivilPrelims account, a sign-in code has been sent.' });
     }
     if (p === '/api/google-login' && req.method === 'POST') {
       limit(req, 'google-login', 8);
