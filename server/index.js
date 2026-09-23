@@ -43,6 +43,9 @@ state.userRoles = { ...(state.userRoles || {}) };
 state.studentAccounts = { ...(state.studentAccounts || {}) };
 state.studentCredentials = { ...(state.studentCredentials || {}) };
 state.studentSignupCodes = { ...(state.studentSignupCodes || {}) };
+state.adminRecoveries = { ...(state.adminRecoveries || {}) };
+const configuredAdminEmail = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
+if (state.adminRecovery && configuredAdminEmail && !state.adminRecoveries[configuredAdminEmail]) state.adminRecoveries[configuredAdminEmail] = state.adminRecovery;
 let saveQueue = Promise.resolve();
 const save = () => {
   const snapshot = JSON.stringify(state, null, 2);
@@ -90,7 +93,7 @@ const same = (a, b) => {
 };
 async function consumeAdminRecoveryCode(email, code) {
   if (firebaseDb) {
-    const recoveryRef = firebaseDb.collection('authRecovery').doc('admin');
+    const recoveryRef = firebaseDb.collection('authRecovery').doc(email === configuredAdminEmail ? 'admin' : `admin-${hash(email)}`);
     return firebaseDb.runTransaction(async transaction => {
       const snapshot = await transaction.get(recoveryRef);
       const recovery = snapshot.data();
@@ -99,9 +102,27 @@ async function consumeAdminRecoveryCode(email, code) {
       return true;
     });
   }
-  const recovery = state.adminRecovery;
+  const recovery = state.adminRecoveries[email] || (email === configuredAdminEmail ? state.adminRecovery : null);
   if (!recovery || recovery.email !== email || recovery.expiresAt <= Date.now() || !same(recovery.codeHash, hash(code))) return false;
-  state.adminRecovery = null;
+  delete state.adminRecoveries[email];
+  if (email === configuredAdminEmail) state.adminRecovery = null;
+  await save();
+  return true;
+}
+async function consumeStudentRecoveryCode(email, code) {
+  if (firebaseDb) {
+    const recoveryRef = firebaseDb.collection('authRecovery').doc(`student-${hash(email)}`);
+    return firebaseDb.runTransaction(async transaction => {
+      const snapshot = await transaction.get(recoveryRef);
+      const recovery = snapshot.data();
+      if (!recovery || recovery.email !== email || recovery.expiresAt <= Date.now() || !same(recovery.codeHash, hash(code))) return false;
+      transaction.delete(recoveryRef);
+      return true;
+    });
+  }
+  const recovery = state.studentSignupCodes[email];
+  if (!recovery || recovery.email !== email || recovery.expiresAt <= Date.now() || !same(recovery.codeHash, hash(code))) return false;
+  delete state.studentSignupCodes[email];
   await save();
   return true;
 }
@@ -343,7 +364,7 @@ async function api(req, res) {
     }
     if (p === '/api/catalog' && req.method === 'GET') return json(res, 200, {
       ok: true, config: state.config, subjects: state.subjects.map(s => ({ ...s, count: state.questions.filter(q => q.subjectId === s.id).length })),
-      pdf: hasPdf() ? state.pdf : null, checkoutMode: checkoutMode(), primaryAdminEmail:String(process.env.ADMIN_EMAIL || '').trim().toLowerCase()
+      pdf: hasPdf() ? state.pdf : null, checkoutMode: checkoutMode()
     });
     if (p === '/api/session' && req.method === 'GET') {
       const session = await getSession(req);
@@ -381,20 +402,18 @@ async function api(req, res) {
       const input = await body(req);
       const email = String(input.email || '').trim().toLowerCase();
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return fail(res, 400, 'Enter a valid email address.');
+      if (await getUserRole(email) === 'admin') return fail(res, 409, 'This account already exists. Use Log in and request a sign-in code.');
+      if (await getStudentCredential(email)) return fail(res, 409, 'This account already exists. Use Log in.');
       if (!process.env.RESEND_API_KEY || !process.env.FROM_EMAIL) return fail(res, 503, 'Email verification is temporarily unavailable.');
-      const adminEmail = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
       const verificationCode = String(crypto.randomInt(100000, 1000000));
       const recovery = { email, codeHash:hash(verificationCode), expiresAt:Date.now() + 10 * 60 * 1000 };
-      const recoveryRef = firebaseDb?.collection('authRecovery').doc(email === adminEmail ? 'admin' : `signup-${hash(email)}`);
+      const recoveryRef = firebaseDb?.collection('authRecovery').doc(`signup-${hash(email)}`);
       if (recoveryRef) await recoveryRef.set(recovery);
-      else if (email === adminEmail) { state.adminRecovery = recovery; await save(); }
       else { state.studentSignupCodes[email] = recovery; await save(); }
       try {
-        if (email === adminEmail) await sendAdminRecoveryEmail(email, verificationCode);
-        else await sendStudentSignupCode(email, verificationCode);
+        await sendStudentSignupCode(email, verificationCode);
       } catch {
         if (recoveryRef) await recoveryRef.delete();
-        else if (email === adminEmail) { state.adminRecovery = null; await save(); }
         else { delete state.studentSignupCodes[email]; await save(); }
         return fail(res, 502, 'Could not send the verification email. Please try again.');
       }
@@ -411,14 +430,14 @@ async function api(req, res) {
       if (name.length < 2) return fail(res, 400, 'Enter your name.');
       if (password.length < 10) return fail(res, 400, 'Choose a password with at least 10 characters.');
       if (!/^\d{6}$/.test(code)) return fail(res, 400, 'Enter the six-digit verification code from your email.');
-      const adminEmail = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
-      const primaryAdmin = email === adminEmail && Boolean(adminEmail);
+      if (await getUserRole(email) === 'admin') return fail(res, 409, 'Admin accounts use Log in and an email sign-in code.');
+      if (await getStudentCredential(email)) return fail(res, 409, 'This account already exists. Use Log in.');
       const salt = crypto.randomBytes(16).toString('hex');
       const credential = { email, name, salt, passwordHash:crypto.scryptSync(password, salt, 64).toString('hex'), createdAt:new Date().toISOString() };
       let verified = false;
       if (firebaseDb) {
-        const recoveryRef = firebaseDb.collection('authRecovery').doc(primaryAdmin ? 'admin' : `signup-${hash(email)}`);
-        const credentialRef = firebaseDb.collection('authCredentials').doc(primaryAdmin ? 'admin' : `student-${hash(email)}`);
+        const recoveryRef = firebaseDb.collection('authRecovery').doc(`signup-${hash(email)}`);
+        const credentialRef = firebaseDb.collection('authCredentials').doc(`student-${hash(email)}`);
         verified = await firebaseDb.runTransaction(async transaction => {
           const snapshot = await transaction.get(recoveryRef);
           const recovery = snapshot.data();
@@ -428,20 +447,19 @@ async function api(req, res) {
           return true;
         });
       } else {
-        const recovery = primaryAdmin ? state.adminRecovery : state.studentSignupCodes[email];
+        const recovery = state.studentSignupCodes[email];
         verified = Boolean(recovery && recovery.email === email && recovery.expiresAt > Date.now() && same(recovery.codeHash, hash(code)));
         if (verified) {
-          if (primaryAdmin) { state.adminCredential = credential; state.adminRecovery = null; }
-          else { state.studentCredentials[email] = credential; delete state.studentSignupCodes[email]; }
+          state.studentCredentials[email] = credential;
+          delete state.studentSignupCodes[email];
         }
       }
       if (!verified) return fail(res, 401, 'That code could not be verified. Request a new code and use the latest email within 10 minutes.');
       state.studentAccounts[email] = { email, name, createdAt:credential.createdAt };
-      if (!primaryAdmin && !state.userRoles[email]) state.userRoles[email] = 'student';
+      if (!state.userRoles[email]) state.userRoles[email] = 'student';
       await save();
-      const role = primaryAdmin ? 'admin' : await getUserRole(email);
-      await createSession(req, res, role, email);
-      return json(res, 200, { ok:true, role, redirect:role === 'admin' ? '/admin' : '/library' });
+      await createSession(req, res, 'student', email);
+      return json(res, 200, { ok:true, role:'student', redirect:'/library' });
     }
     if (p === '/api/login' && req.method === 'POST') {
       limit(req, 'login', 10);
@@ -449,6 +467,7 @@ async function api(req, res) {
       const identifier = String(input.identifier || '').trim().toLowerCase();
       const credential = String(input.secret || '');
       const adminEmail = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
+      const role = await getUserRole(identifier);
       if (adminEmail && identifier === adminEmail) {
         const savedCredential = await getAdminCredential(identifier);
         if ((process.env.ADMIN_PASSWORD && same(credential, process.env.ADMIN_PASSWORD)) || verifyAdminPassword(credential, savedCredential)) {
@@ -456,9 +475,13 @@ async function api(req, res) {
           return json(res, 200, { ok: true, role: 'admin', redirect: '/admin' });
         }
       }
-      if (adminEmail && identifier === adminEmail && await consumeAdminRecoveryCode(identifier, credential)) {
+      if (role === 'admin' && await consumeAdminRecoveryCode(identifier, credential)) {
         await createSession(req, res, 'admin', identifier);
         return json(res, 200, { ok: true, role: 'admin', redirect: '/admin' });
+      }
+      if (role === 'student' && /^\d{6}$/.test(credential) && await consumeStudentRecoveryCode(identifier, credential)) {
+        await createSession(req, res, 'student', identifier);
+        return json(res, 200, { ok:true, role:'student', redirect:'/library' });
       }
       const studentCredential = await getStudentCredential(identifier);
       if (verifyAdminPassword(credential, studentCredential)) {
@@ -468,7 +491,6 @@ async function api(req, res) {
       }
       const order = state.orders.find(item => item.status === 'paid' && item.email === identifier && same(item.accessCodeHash, hash(credential)));
       if (!order) return fail(res, 401, 'We could not verify those details. Check your email and password or use the access code from your purchase.');
-      const role = await getUserRole(identifier);
       await createSession(req, res, role, identifier);
       return json(res, 200, { ok: true, role, redirect: role === 'admin' ? '/admin' : '/library' });
     }
@@ -478,19 +500,31 @@ async function api(req, res) {
       const email = String(input.email || '').trim().toLowerCase();
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return fail(res, 400, 'Enter a valid purchase email.');
       const order = paidOrder(email);
-      const adminEmail = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
-      if (email === adminEmail && adminEmail && process.env.RESEND_API_KEY && process.env.FROM_EMAIL) {
+      const role = await getUserRole(email);
+      if (role === 'admin' && process.env.RESEND_API_KEY && process.env.FROM_EMAIL) {
         const recoveryCode = String(crypto.randomInt(100000, 1000000));
         const recovery = { email, codeHash: hash(recoveryCode), expiresAt: Date.now() + 10 * 60 * 1000 };
-        const recoveryRef = firebaseDb?.collection('authRecovery').doc('admin');
+        const recoveryRef = firebaseDb?.collection('authRecovery').doc(email === configuredAdminEmail ? 'admin' : `admin-${hash(email)}`);
         if (recoveryRef) await recoveryRef.set(recovery);
-        else { state.adminRecovery = recovery; await save(); }
+        else { state.adminRecoveries[email] = recovery; if (email === configuredAdminEmail) state.adminRecovery = recovery; await save(); }
         try {
           await sendAdminRecoveryEmail(email, recoveryCode);
         } catch (error) {
           if (recoveryRef) await recoveryRef.delete();
-          else { state.adminRecovery = null; await save(); }
+          else { delete state.adminRecoveries[email]; if (email === configuredAdminEmail) state.adminRecovery = null; await save(); }
           console.error('Admin recovery email delivery failed:', error.message);
+        }
+      } else if (role === 'student' && await getStudentCredential(email) && process.env.RESEND_API_KEY && process.env.FROM_EMAIL) {
+        const recoveryCode = String(crypto.randomInt(100000, 1000000));
+        const recovery = { email, codeHash:hash(recoveryCode), expiresAt:Date.now() + 10 * 60 * 1000 };
+        const recoveryRef = firebaseDb?.collection('authRecovery').doc(`student-${hash(email)}`);
+        if (recoveryRef) await recoveryRef.set(recovery);
+        else { state.studentSignupCodes[email] = recovery; await save(); }
+        try { await sendStudentSignupCode(email, recoveryCode); }
+        catch (error) {
+          if (recoveryRef) await recoveryRef.delete();
+          else { delete state.studentSignupCodes[email]; await save(); }
+          console.error('Student recovery email delivery failed:', error.message);
         }
       } else if (order && process.env.RESEND_API_KEY && process.env.FROM_EMAIL) {
         try { await sendAccessEmail(order, decrypt(order.accessCodeEncrypted), `${order.id}-recovery-${crypto.randomUUID()}`); }

@@ -83,7 +83,7 @@ export default function LoginPage() {
           {signup && <><label htmlFor="signup-name">Your name</label><input id="signup-name" type="text" autoComplete="name" required minLength={2} value={name} onChange={e => setName(e.target.value)} placeholder="Your name"/></>}
           <label htmlFor="login-identifier">{signup ? 'Email address' : 'Purchase email or admin email'}</label>
           <input id="login-identifier" type="email" required autoComplete="username" value={identifier} onChange={e => setIdentifier(e.target.value)} placeholder="you@example.com"/>
-          {signup && <><label htmlFor="login-secret">Six-digit email verification code</label><input id="login-secret" type="text" inputMode="numeric" autoComplete="one-time-code" required value={secret} onChange={e => setSecret(e.target.value)} placeholder="Enter the code from your email"/>{identifier.trim().toLowerCase() === catalog.primaryAdminEmail && <p className="access-message">This configured account receives admin access after email verification.</p>}</>}
+          {signup && <><label htmlFor="login-secret">Six-digit email verification code</label><input id="login-secret" type="text" inputMode="numeric" autoComplete="one-time-code" required value={secret} onChange={e => setSecret(e.target.value)} placeholder="Enter the code from your email"/></>}
           {!signup && <><label htmlFor="login-secret">Password or purchase access code</label><input id="login-secret" type="password" autoComplete="current-password" required value={secret} onChange={e => setSecret(e.target.value)} placeholder="Enter your password or purchase code"/></>}
           {signup && <>
             <label htmlFor="new-admin-password">Create password</label>
