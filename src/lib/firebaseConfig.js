@@ -11,4 +11,11 @@ export const firebaseConfig = {
   measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
 };
 
-export const hasFirebaseConfig = Object.values(firebaseConfig).every(Boolean);
+// Firebase Auth only needs these values. Storage, messaging and Analytics are
+// optional for this app and should not disable the Google sign-in button.
+export const hasFirebaseConfig = [
+  firebaseConfig.apiKey,
+  firebaseConfig.authDomain,
+  firebaseConfig.projectId,
+  firebaseConfig.appId
+].every(Boolean);

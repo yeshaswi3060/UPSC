@@ -301,8 +301,9 @@ async function api(req, res) {
       const email = String(result.users?.[0]?.email || '').toLowerCase();
       if (!email) return fail(res, 401, 'Google account could not be verified.');
       const order = paidOrder(email);
-      if (!order && state.userRoles[email] !== 'admin') return fail(res, 403, 'This Google account does not have a CivilPrelims purchase yet.');
-      const role = state.userRoles[email] === 'admin' ? 'admin' : 'student';
+      const isAdmin = email === String(process.env.ADMIN_EMAIL || '').trim().toLowerCase() || state.userRoles[email] === 'admin';
+      if (!order && !isAdmin) return fail(res, 403, 'This Google account does not have a CivilPrelims purchase yet.');
+      const role = isAdmin ? 'admin' : 'student';
       await createSession(req, res, role, email);
       return json(res, 200, { ok:true, role, redirect: role === 'admin' ? '/admin' : '/library' });
     }
