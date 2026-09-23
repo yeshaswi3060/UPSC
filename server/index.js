@@ -102,6 +102,19 @@ async function consumeAdminRecoveryCode(email, code) {
   await save();
   return true;
 }
+async function getAdminCredential(email) {
+  if (firebaseDb) {
+    const snapshot = await firebaseDb.collection('authCredentials').doc('admin').get();
+    const credential = snapshot.data();
+    return credential?.email === email ? credential : null;
+  }
+  return state.adminCredential?.email === email ? state.adminCredential : null;
+}
+function verifyAdminPassword(password, credential) {
+  if (!credential?.salt || !credential?.passwordHash) return false;
+  const candidate = crypto.scryptSync(String(password), credential.salt, 64).toString('hex');
+  return same(candidate, credential.passwordHash);
+}
 const token = () => crypto.randomBytes(24).toString('base64url');
 const sessionCookie = (req, value, age = 2592000) => `cp_session=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${age}${req.headers['x-forwarded-proto'] === 'https' ? '; Secure' : ''}`;
 const visitorCookie = (req, value) => `cp_visitor=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000${req.headers['x-forwarded-proto'] === 'https' ? '; Secure' : ''}`;
@@ -297,16 +310,52 @@ async function api(req, res) {
       await createSession(req, res, 'student', email);
       return json(res, 200, { ok: true });
     }
+    if (p === '/api/admin/signup' && req.method === 'POST') {
+      limit(req, 'admin-signup', 5);
+      const input = await body(req);
+      const email = String(input.email || '').trim().toLowerCase();
+      const code = String(input.code || '').trim();
+      const password = String(input.password || '');
+      const adminEmail = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
+      if (!adminEmail || email !== adminEmail) return fail(res, 403, 'This email is not configured for admin access.');
+      if (password.length < 10) return fail(res, 400, 'Choose a password with at least 10 characters.');
+      if (!/^\d{6}$/.test(code)) return fail(res, 400, 'Enter the six-digit code from the latest email.');
+      const salt = crypto.randomBytes(16).toString('hex');
+      const credential = { email, salt, passwordHash: crypto.scryptSync(password, salt, 64).toString('hex'), createdAt: new Date().toISOString() };
+      let verified = false;
+      if (firebaseDb) {
+        const recoveryRef = firebaseDb.collection('authRecovery').doc('admin');
+        const credentialRef = firebaseDb.collection('authCredentials').doc('admin');
+        verified = await firebaseDb.runTransaction(async transaction => {
+          const snapshot = await transaction.get(recoveryRef);
+          const recovery = snapshot.data();
+          if (!recovery || recovery.email !== email || recovery.expiresAt <= Date.now() || !same(recovery.codeHash, hash(code))) return false;
+          transaction.set(credentialRef, credential);
+          transaction.delete(recoveryRef);
+          return true;
+        });
+      } else {
+        const recovery = state.adminRecovery;
+        verified = Boolean(recovery && recovery.email === email && recovery.expiresAt > Date.now() && same(recovery.codeHash, hash(code)));
+        if (verified) { state.adminCredential = credential; state.adminRecovery = null; await save(); }
+      }
+      if (!verified) return fail(res, 401, 'That code could not be verified. Request a new code and use the latest email within 10 minutes.');
+      await createSession(req, res, 'admin', email);
+      return json(res, 200, { ok: true, role: 'admin', redirect: '/admin' });
+    }
     if (p === '/api/login' && req.method === 'POST') {
       limit(req, 'login', 10);
       const input = await body(req);
       const identifier = String(input.identifier || '').trim().toLowerCase();
       const credential = String(input.secret || '');
-      if (process.env.ADMIN_PASSWORD && same(credential, process.env.ADMIN_PASSWORD)) {
-        await createSession(req, res, 'admin');
-        return json(res, 200, { ok: true, role: 'admin', redirect: '/admin' });
-      }
       const adminEmail = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
+      if (adminEmail && identifier === adminEmail) {
+        const savedCredential = await getAdminCredential(identifier);
+        if ((process.env.ADMIN_PASSWORD && same(credential, process.env.ADMIN_PASSWORD)) || verifyAdminPassword(credential, savedCredential)) {
+          await createSession(req, res, 'admin', identifier);
+          return json(res, 200, { ok: true, role: 'admin', redirect: '/admin' });
+        }
+      }
       if (adminEmail && identifier === adminEmail && await consumeAdminRecoveryCode(identifier, credential)) {
         await createSession(req, res, 'admin', identifier);
         return json(res, 200, { ok: true, role: 'admin', redirect: '/admin' });
