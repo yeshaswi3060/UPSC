@@ -153,20 +153,34 @@ function ensureOrigin(req) {
   try { if (new URL(origin).host === req.headers.host) return; } catch { /* denied */ }
   throw Object.assign(new Error('Invalid request origin.'), { status: 403 });
 }
-function getSession(req) {
+async function getSession(req) {
   const value = (req.headers.cookie || '').split(';').map(x => x.trim()).find(x => x.startsWith('cp_session='))?.slice(11);
   if (!value) return null;
-  return state.sessions.find(s => s.hash === hash(value) && s.expiresAt > Date.now()) || null;
+  const sessionHash = hash(value);
+  if (firebaseDb) {
+    const sessionRef = firebaseDb.collection('authSessions').doc(sessionHash);
+    const snapshot = await sessionRef.get();
+    const session = snapshot.data();
+    if (!session || session.expiresAt <= Date.now()) {
+      if (session) await sessionRef.delete();
+      return null;
+    }
+    return session;
+  }
+  return state.sessions.find(s => s.hash === sessionHash && s.expiresAt > Date.now()) || null;
 }
 async function createSession(req, res, role, email = '') {
+  if (process.env.VERCEL && !firebaseDb) throw Object.assign(new Error('Sign-in storage is unavailable. Please try again later.'), { status:503 });
   const value = token();
-  state.sessions.push({ hash: hash(value), role, email, expiresAt: Date.now() + 30 * 86400000 });
+  const session = { hash: hash(value), role, email, expiresAt: Date.now() + 30 * 86400000 };
+  if (firebaseDb) await firebaseDb.collection('authSessions').doc(session.hash).set(session);
+  state.sessions.push(session);
   state.sessions = state.sessions.filter(s => s.expiresAt > Date.now());
   await save();
   res.setHeader('Set-Cookie', sessionCookie(req, value));
 }
-function requireRole(req, role) {
-  const session = getSession(req);
+async function requireRole(req, role) {
+  const session = await getSession(req);
   if (!session || (role && session.role !== role)) throw Object.assign(new Error('Sign in to continue.'), { status: 401 });
   return session;
 }
@@ -270,7 +284,7 @@ async function api(req, res) {
       const pathName = String(input.path || '/').slice(0, 100);
       const known = visitorFrom(req);
       const visitorId = known && /^[a-f0-9]{32}$/.test(known) ? known : crypto.randomBytes(16).toString('hex');
-      const session = getSession(req);
+      const session = await getSession(req);
       if (session?.role === 'admin' || pathName.startsWith('/admin')) return json(res, 200, { ok: true });
       if (!known) res.setHeader('Set-Cookie', visitorCookie(req, visitorId));
       await recordEvent(type, visitorId, session?.role === 'student' ? session.email : '', pathName);
@@ -281,12 +295,13 @@ async function api(req, res) {
       pdf: hasPdf() ? state.pdf : null, checkoutMode: checkoutMode()
     });
     if (p === '/api/session' && req.method === 'GET') {
-      const session = getSession(req);
+      const session = await getSession(req);
       return json(res, 200, { ok: true, user: session ? { role: session.role, email: session.email, hasPurchase: session.role === 'student' ? Boolean(paidOrder(session.email)) : true } : null });
     }
     if (p === '/api/logout' && req.method === 'POST') {
-      const session = getSession(req);
+      const session = await getSession(req);
       if (session) state.sessions = state.sessions.filter(s => s !== session);
+      if (session && firebaseDb) await firebaseDb.collection('authSessions').doc(session.hash).delete();
       await save();
       res.setHeader('Set-Cookie', sessionCookie(req, '', 0));
       return json(res, 200, { ok: true });
@@ -310,7 +325,7 @@ async function api(req, res) {
       await createSession(req, res, 'student', email);
       return json(res, 200, { ok: true });
     }
-    if (p === '/api/admin/signup' && req.method === 'POST') {
+      if (p === '/api/admin/signup' && req.method === 'POST') {
       limit(req, 'admin-signup', 5);
       const input = await body(req);
       const email = String(input.email || '').trim().toLowerCase();
@@ -322,24 +337,29 @@ async function api(req, res) {
       if (!/^\d{6}$/.test(code)) return fail(res, 400, 'Enter the six-digit code from the latest email.');
       const salt = crypto.randomBytes(16).toString('hex');
       const credential = { email, salt, passwordHash: crypto.scryptSync(password, salt, 64).toString('hex'), createdAt: new Date().toISOString() };
-      let verified = false;
+      let signupStatus = 'invalid';
       if (firebaseDb) {
         const recoveryRef = firebaseDb.collection('authRecovery').doc('admin');
         const credentialRef = firebaseDb.collection('authCredentials').doc('admin');
-        verified = await firebaseDb.runTransaction(async transaction => {
+        signupStatus = await firebaseDb.runTransaction(async transaction => {
           const snapshot = await transaction.get(recoveryRef);
+          const existingCredential = await transaction.get(credentialRef);
+          if (existingCredential.exists) return 'exists';
           const recovery = snapshot.data();
-          if (!recovery || recovery.email !== email || recovery.expiresAt <= Date.now() || !same(recovery.codeHash, hash(code))) return false;
+          if (!recovery || recovery.email !== email || recovery.expiresAt <= Date.now() || !same(recovery.codeHash, hash(code))) return 'invalid';
           transaction.set(credentialRef, credential);
           transaction.delete(recoveryRef);
-          return true;
+          return 'created';
         });
       } else {
+        if (state.adminCredential) return fail(res, 409, 'Admin password setup is already complete. Use Log in.');
         const recovery = state.adminRecovery;
-        verified = Boolean(recovery && recovery.email === email && recovery.expiresAt > Date.now() && same(recovery.codeHash, hash(code)));
+        const verified = Boolean(recovery && recovery.email === email && recovery.expiresAt > Date.now() && same(recovery.codeHash, hash(code)));
+        signupStatus = verified ? 'created' : 'invalid';
         if (verified) { state.adminCredential = credential; state.adminRecovery = null; await save(); }
       }
-      if (!verified) return fail(res, 401, 'That code could not be verified. Request a new code and use the latest email within 10 minutes.');
+      if (signupStatus === 'exists') return fail(res, 409, 'Admin password setup is already complete. Use Log in.');
+      if (signupStatus !== 'created') return fail(res, 401, 'That code could not be verified. Request a new code and use the latest email within 10 minutes.');
       await createSession(req, res, 'admin', email);
       return json(res, 200, { ok: true, role: 'admin', redirect: '/admin' });
     }
@@ -464,7 +484,7 @@ async function api(req, res) {
       return json(res, 200, { ok: true });
     }
     if (p === '/api/pdf' && req.method === 'GET') {
-      const session = requireRole(req);
+      const session = await requireRole(req);
       if (session.role !== 'admin' && !(session.role === 'student' && paidOrder(session.email))) return fail(res, 403, 'Purchase required.');
       if (!hasPdf()) return fail(res, 404, 'Paper has not been uploaded yet.');
       await recordEvent(url.searchParams.get('download') === '1' ? 'pdf_download' : 'pdf_view', visitorFrom(req) || '', session.role === 'student' ? session.email : '');
@@ -473,14 +493,14 @@ async function api(req, res) {
       res.end(pdfBytes); return true;
     }
     if (p.startsWith('/api/questions/') && req.method === 'GET') {
-      const session = requireRole(req);
+      const session = await requireRole(req);
       if (session.role !== 'admin' && !(session.role === 'student' && paidOrder(session.email))) return fail(res, 403, 'Purchase required.');
       const subjectId = p.split('/')[3];
       if (!state.subjects.some(s => s.id === subjectId)) return fail(res, 404, 'Subject not found.');
       return json(res, 200, { ok: true, questions: state.questions.filter(q => q.subjectId === subjectId).map(q => ({ id:q.id, subjectId:q.subjectId, prompt:q.prompt, options:q.options })) });
     }
     if (p.match(/^\/api\/tests\/[^/]+\/submit$/) && req.method === 'POST') {
-      const session = requireRole(req, 'student');
+      const session = await requireRole(req, 'student');
       if (!paidOrder(session.email)) return fail(res, 403, 'Purchase required.');
       limit(req, `test-${session.email}`, 20);
       const subjectId = p.split('/')[3];
@@ -497,7 +517,7 @@ async function api(req, res) {
       return json(res, 200, { ok: true, attempt, review });
     }
     if (p === '/api/profile' && req.method === 'GET') {
-      const session = requireRole(req, 'student');
+      const session = await requireRole(req, 'student');
       const orders = state.orders.filter(o => o.status === 'paid' && o.email === session.email);
       if (!orders.length) return fail(res, 403, 'Purchase required.');
       const attempts = state.attempts.filter(a => a.email === session.email);
@@ -508,7 +528,7 @@ async function api(req, res) {
       return json(res, 200, { ok:true, email:session.email, joinedAt:orders[orders.length-1]?.paidAt, attempts:attempts.slice(0,30), daily, subjects, activity, updates:state.updates.slice(0,10), totalTests:attempts.length, averageScore:attempts.length ? Math.round(attempts.reduce((n,a) => n + a.correct / Math.max(a.total,1) * 100,0) / attempts.length) : 0 });
     }
     if (p.startsWith('/api/admin/')) {
-      requireRole(req, 'admin');
+      await requireRole(req, 'admin');
       if (p === '/api/admin/overview' && req.method === 'GET') {
         const range = dateRange(url);
         const events = state.analytics.events.filter(e => e.at >= range.start && e.at <= range.end);
@@ -536,7 +556,19 @@ async function api(req, res) {
           const lastEvent = state.analytics.events.filter(e => e.email === email).at(-1);
           return { email, phone:ownOrders[0]?.phone || '', accessCode:ownOrders[0]?.accessCodeEncrypted ? decrypt(ownOrders[0].accessCodeEncrypted) : '', role:state.userRoles[email] || 'student', joinedAt:ownOrders.at(-1)?.paidAt, purchases:ownOrders.length, paidRevenue:ownOrders.filter(o => o.mode === 'live').reduce((n,o) => n + o.amount,0), tests:attempts.length, averageScore:attempts.length ? Math.round(attempts.reduce((n,a) => n + a.correct / Math.max(a.total,1) * 100,0) / attempts.length) : null, lastActive:lastEvent?.at || ownOrders[0]?.paidAt, lastSubject:attempts[0]?.subjectName || null, testMode:ownOrders.every(o => o.mode === 'test') };
         });
-        return json(res, 200, { ok:true, range, purchases:paid.length, testPurchases:testPaid.length, revenue:paid.reduce((n,o) => n + o.amount,0), lifetimePurchases:state.orders.filter(o => o.status === 'paid' && o.mode === 'live').length, lifetimeRevenue:state.orders.filter(o => o.status === 'paid' && o.mode === 'live').reduce((n,o) => n + o.amount,0), lifetimeStudents:new Set(state.orders.filter(o => o.status === 'paid' && o.mode === 'live').map(o => o.email)).size, totalTestAttempts:state.attempts.length, visitors:visitors.size, pageViews:events.filter(e => e.type === 'page_view').length, buyClicks:interested.size, checkouts:orders.length, checkoutVisitors:checkoutVisitors.size, clickNoPurchase, conversion:visitors.size ? Math.round(new Set(paid.map(o => o.visitorId).filter(Boolean)).size / visitors.size * 1000) / 10 : 0, daily, topPages, customers:customers.sort((a,b) => b.lastActive.localeCompare(a.lastActive)), orders:state.orders.filter(o => o.status === 'paid').map(publicOrder).slice(0, 100), questions:state.questions, config:state.config, pdf:state.pdf, updates:state.updates });
+        const primaryAdmin = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
+        const adminUsers = [{ email:primaryAdmin, primary:true }, ...Object.entries(state.userRoles).filter(([email, role]) => role === 'admin' && email !== primaryAdmin).map(([email]) => ({ email, primary:false }))].filter(user => user.email);
+        return json(res, 200, { ok:true, range, purchases:paid.length, testPurchases:testPaid.length, revenue:paid.reduce((n,o) => n + o.amount,0), lifetimePurchases:state.orders.filter(o => o.status === 'paid' && o.mode === 'live').length, lifetimeRevenue:state.orders.filter(o => o.status === 'paid' && o.mode === 'live').reduce((n,o) => n + o.amount,0), lifetimeStudents:new Set(state.orders.filter(o => o.status === 'paid' && o.mode === 'live').map(o => o.email)).size, totalTestAttempts:state.attempts.length, visitors:visitors.size, pageViews:events.filter(e => e.type === 'page_view').length, buyClicks:interested.size, checkouts:orders.length, checkoutVisitors:checkoutVisitors.size, clickNoPurchase, conversion:visitors.size ? Math.round(new Set(paid.map(o => o.visitorId).filter(Boolean)).size / visitors.size * 1000) / 10 : 0, daily, topPages, adminUsers, customers:customers.sort((a,b) => b.lastActive.localeCompare(a.lastActive)), orders:state.orders.filter(o => o.status === 'paid').map(publicOrder).slice(0, 100), questions:state.questions, config:state.config, pdf:state.pdf, updates:state.updates });
+      }
+      if (p === '/api/admin/users' && req.method === 'POST') {
+        const input = await body(req);
+        const email = String(input.email || '').trim().toLowerCase();
+        const role = String(input.role || '');
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return fail(res, 400, 'Enter a valid email address.');
+        if (!['student','admin'].includes(role)) return fail(res, 400, 'Role must be student or admin.');
+        if (email === String(process.env.ADMIN_EMAIL || '').trim().toLowerCase()) return fail(res, 409, 'This is the primary admin account.');
+        state.userRoles[email] = role; await save();
+        return json(res, 200, { ok:true, email, role });
       }
       if (p.startsWith('/api/admin/students/') && req.method === 'GET') {
         const email = decodeURIComponent(p.slice('/api/admin/students/'.length));
