@@ -40,6 +40,9 @@ const loadedState = remoteState || (existsSync(stateFile) ? JSON.parse(readFileS
 let state = { ...structuredClone(SEED_STATE), ...(loadedState || {}) };
 state.analytics = { events: [], ...state.analytics };
 state.userRoles = { ...(state.userRoles || {}) };
+state.studentAccounts = { ...(state.studentAccounts || {}) };
+state.studentCredentials = { ...(state.studentCredentials || {}) };
+state.studentSignupCodes = { ...(state.studentSignupCodes || {}) };
 let saveQueue = Promise.resolve();
 const save = () => {
   const snapshot = JSON.stringify(state, null, 2);
@@ -109,6 +112,37 @@ async function getAdminCredential(email) {
     return credential?.email === email ? credential : null;
   }
   return state.adminCredential?.email === email ? state.adminCredential : null;
+}
+async function getStudentCredential(email) {
+  if (firebaseDb) {
+    const snapshot = await firebaseDb.collection('authCredentials').doc(`student-${hash(email)}`).get();
+    const credential = snapshot.data();
+    return credential?.email === email ? credential : null;
+  }
+  return state.studentCredentials[email] || null;
+}
+async function getUserRole(email) {
+  const primaryAdmin = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
+  if (email === primaryAdmin && primaryAdmin) return 'admin';
+  if (firebaseDb) {
+    const snapshot = await firebaseDb.collection('authRoles').doc(hash(email)).get();
+    if (snapshot.exists) return snapshot.data()?.role || 'student';
+  }
+  return state.userRoles[email] || 'student';
+}
+async function setUserRole(email, role) {
+  state.userRoles[email] = role;
+  if (firebaseDb) await firebaseDb.collection('authRoles').doc(hash(email)).set({ email, role, updatedAt:new Date().toISOString() });
+  await save();
+}
+async function listAdminUsers() {
+  const primaryAdmin = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
+  let additional = Object.entries(state.userRoles).filter(([email, role]) => role === 'admin' && email !== primaryAdmin).map(([email]) => email);
+  if (firebaseDb) {
+    const snapshot = await firebaseDb.collection('authRoles').where('role', '==', 'admin').get();
+    additional = snapshot.docs.map(doc => doc.data().email).filter(email => email && email !== primaryAdmin);
+  }
+  return [{ email:primaryAdmin, primary:true }, ...[...new Set(additional)].map(email => ({ email, primary:false }))].filter(user => user.email);
 }
 function verifyAdminPassword(password, credential) {
   if (!credential?.salt || !credential?.passwordHash) return false;
@@ -235,6 +269,23 @@ async function sendAdminRecoveryEmail(email, recoveryCode) {
   if (!response.ok) throw new Error(`Resend rejected the admin recovery email (HTTP ${response.status}).`);
   return true;
 }
+async function sendStudentSignupCode(email, verificationCode) {
+  if (!process.env.RESEND_API_KEY || !process.env.FROM_EMAIL) throw new Error('Email verification is not configured.');
+  const loginUrl = `${process.env.PUBLIC_URL || 'your CivilPrelims website'}/login`;
+  const response = await fetch('https://api.resend.com/emails', {
+    method:'POST',
+    headers:{ Authorization:`Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type':'application/json', 'Idempotency-Key':`civilprelims-signup-${crypto.randomUUID()}` },
+    body:JSON.stringify({
+      from:process.env.FROM_EMAIL,
+      to:[email],
+      subject:'Verify your CivilPrelims account',
+      text:`Your CivilPrelims verification code is ${verificationCode}. It expires in 10 minutes. Continue signing up at ${loginUrl}. If you did not request this, ignore this email.`,
+      html:`<p>Your CivilPrelims verification code is:</p><p style="font-size:24px;font-weight:bold;letter-spacing:3px">${verificationCode}</p><p>It expires in 10 minutes. If you did not request this, ignore this email.</p>`
+    })
+  });
+  if (!response.ok) throw new Error('Verification email could not be sent.');
+  return true;
+}
 async function finishOrder(order) {
   if (order.status === 'paid') {
     const code = decrypt(order.accessCodeEncrypted);
@@ -292,7 +343,7 @@ async function api(req, res) {
     }
     if (p === '/api/catalog' && req.method === 'GET') return json(res, 200, {
       ok: true, config: state.config, subjects: state.subjects.map(s => ({ ...s, count: state.questions.filter(q => q.subjectId === s.id).length })),
-      pdf: hasPdf() ? state.pdf : null, checkoutMode: checkoutMode()
+      pdf: hasPdf() ? state.pdf : null, checkoutMode: checkoutMode(), primaryAdminEmail:String(process.env.ADMIN_EMAIL || '').trim().toLowerCase()
     });
     if (p === '/api/session' && req.method === 'GET') {
       const session = await getSession(req);
@@ -325,43 +376,72 @@ async function api(req, res) {
       await createSession(req, res, 'student', email);
       return json(res, 200, { ok: true });
     }
-      if (p === '/api/admin/signup' && req.method === 'POST') {
-      limit(req, 'admin-signup', 5);
+    if (p === '/api/student/signup-code' && req.method === 'POST') {
+      limit(req, 'signup-code', 5);
       const input = await body(req);
       const email = String(input.email || '').trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return fail(res, 400, 'Enter a valid email address.');
+      if (!process.env.RESEND_API_KEY || !process.env.FROM_EMAIL) return fail(res, 503, 'Email verification is temporarily unavailable.');
+      const adminEmail = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
+      const verificationCode = String(crypto.randomInt(100000, 1000000));
+      const recovery = { email, codeHash:hash(verificationCode), expiresAt:Date.now() + 10 * 60 * 1000 };
+      const recoveryRef = firebaseDb?.collection('authRecovery').doc(email === adminEmail ? 'admin' : `signup-${hash(email)}`);
+      if (recoveryRef) await recoveryRef.set(recovery);
+      else if (email === adminEmail) { state.adminRecovery = recovery; await save(); }
+      else { state.studentSignupCodes[email] = recovery; await save(); }
+      try {
+        if (email === adminEmail) await sendAdminRecoveryEmail(email, verificationCode);
+        else await sendStudentSignupCode(email, verificationCode);
+      } catch {
+        if (recoveryRef) await recoveryRef.delete();
+        else if (email === adminEmail) { state.adminRecovery = null; await save(); }
+        else { delete state.studentSignupCodes[email]; await save(); }
+        return fail(res, 502, 'Could not send the verification email. Please try again.');
+      }
+      return json(res, 200, { ok:true, message:'If email delivery is available, your verification code is on its way.' });
+    }
+    if (p === '/api/student/signup' && req.method === 'POST') {
+      limit(req, 'signup', 8);
+      const input = await body(req);
+      const email = String(input.email || '').trim().toLowerCase();
+      const name = String(input.name || '').trim().slice(0, 100);
       const code = String(input.code || '').trim();
       const password = String(input.password || '');
-      const adminEmail = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
-      if (!adminEmail || email !== adminEmail) return fail(res, 403, 'This email is not configured for admin access.');
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return fail(res, 400, 'Enter a valid email address.');
+      if (name.length < 2) return fail(res, 400, 'Enter your name.');
       if (password.length < 10) return fail(res, 400, 'Choose a password with at least 10 characters.');
-      if (!/^\d{6}$/.test(code)) return fail(res, 400, 'Enter the six-digit code from the latest email.');
+      if (!/^\d{6}$/.test(code)) return fail(res, 400, 'Enter the six-digit verification code from your email.');
+      const adminEmail = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
+      const primaryAdmin = email === adminEmail && Boolean(adminEmail);
       const salt = crypto.randomBytes(16).toString('hex');
-      const credential = { email, salt, passwordHash: crypto.scryptSync(password, salt, 64).toString('hex'), createdAt: new Date().toISOString() };
-      let signupStatus = 'invalid';
+      const credential = { email, name, salt, passwordHash:crypto.scryptSync(password, salt, 64).toString('hex'), createdAt:new Date().toISOString() };
+      let verified = false;
       if (firebaseDb) {
-        const recoveryRef = firebaseDb.collection('authRecovery').doc('admin');
-        const credentialRef = firebaseDb.collection('authCredentials').doc('admin');
-        signupStatus = await firebaseDb.runTransaction(async transaction => {
+        const recoveryRef = firebaseDb.collection('authRecovery').doc(primaryAdmin ? 'admin' : `signup-${hash(email)}`);
+        const credentialRef = firebaseDb.collection('authCredentials').doc(primaryAdmin ? 'admin' : `student-${hash(email)}`);
+        verified = await firebaseDb.runTransaction(async transaction => {
           const snapshot = await transaction.get(recoveryRef);
-          const existingCredential = await transaction.get(credentialRef);
-          if (existingCredential.exists) return 'exists';
           const recovery = snapshot.data();
-          if (!recovery || recovery.email !== email || recovery.expiresAt <= Date.now() || !same(recovery.codeHash, hash(code))) return 'invalid';
+          if (!recovery || recovery.email !== email || recovery.expiresAt <= Date.now() || !same(recovery.codeHash, hash(code))) return false;
           transaction.set(credentialRef, credential);
           transaction.delete(recoveryRef);
-          return 'created';
+          return true;
         });
       } else {
-        if (state.adminCredential) return fail(res, 409, 'Admin password setup is already complete. Use Log in.');
-        const recovery = state.adminRecovery;
-        const verified = Boolean(recovery && recovery.email === email && recovery.expiresAt > Date.now() && same(recovery.codeHash, hash(code)));
-        signupStatus = verified ? 'created' : 'invalid';
-        if (verified) { state.adminCredential = credential; state.adminRecovery = null; await save(); }
+        const recovery = primaryAdmin ? state.adminRecovery : state.studentSignupCodes[email];
+        verified = Boolean(recovery && recovery.email === email && recovery.expiresAt > Date.now() && same(recovery.codeHash, hash(code)));
+        if (verified) {
+          if (primaryAdmin) { state.adminCredential = credential; state.adminRecovery = null; }
+          else { state.studentCredentials[email] = credential; delete state.studentSignupCodes[email]; }
+        }
       }
-      if (signupStatus === 'exists') return fail(res, 409, 'Admin password setup is already complete. Use Log in.');
-      if (signupStatus !== 'created') return fail(res, 401, 'That code could not be verified. Request a new code and use the latest email within 10 minutes.');
-      await createSession(req, res, 'admin', email);
-      return json(res, 200, { ok: true, role: 'admin', redirect: '/admin' });
+      if (!verified) return fail(res, 401, 'That code could not be verified. Request a new code and use the latest email within 10 minutes.');
+      state.studentAccounts[email] = { email, name, createdAt:credential.createdAt };
+      if (!primaryAdmin && !state.userRoles[email]) state.userRoles[email] = 'student';
+      await save();
+      const role = primaryAdmin ? 'admin' : await getUserRole(email);
+      await createSession(req, res, role, email);
+      return json(res, 200, { ok:true, role, redirect:role === 'admin' ? '/admin' : '/library' });
     }
     if (p === '/api/login' && req.method === 'POST') {
       limit(req, 'login', 10);
@@ -380,9 +460,15 @@ async function api(req, res) {
         await createSession(req, res, 'admin', identifier);
         return json(res, 200, { ok: true, role: 'admin', redirect: '/admin' });
       }
+      const studentCredential = await getStudentCredential(identifier);
+      if (verifyAdminPassword(credential, studentCredential)) {
+        const role = await getUserRole(identifier);
+        await createSession(req, res, role, identifier);
+        return json(res, 200, { ok:true, role, redirect:role === 'admin' ? '/admin' : '/library' });
+      }
       const order = state.orders.find(item => item.status === 'paid' && item.email === identifier && same(item.accessCodeHash, hash(credential)));
-      if (!order) return fail(res, 401, 'We could not verify those details. Use your purchase email and access code, or the admin password.');
-      const role = state.userRoles[identifier] === 'admin' ? 'admin' : 'student';
+      if (!order) return fail(res, 401, 'We could not verify those details. Check your email and password or use the access code from your purchase.');
+      const role = await getUserRole(identifier);
       await createSession(req, res, role, identifier);
       return json(res, 200, { ok: true, role, redirect: role === 'admin' ? '/admin' : '/library' });
     }
@@ -422,8 +508,9 @@ async function api(req, res) {
       const email = String(result.users?.[0]?.email || '').toLowerCase();
       if (!email) return fail(res, 401, 'Google account could not be verified.');
       const order = paidOrder(email);
-      const isAdmin = email === String(process.env.ADMIN_EMAIL || '').trim().toLowerCase() || state.userRoles[email] === 'admin';
-      if (!order && !isAdmin) return fail(res, 403, 'This Google account does not have a CivilPrelims purchase yet.');
+      const isAdmin = await getUserRole(email) === 'admin';
+      const registeredStudent = await getStudentCredential(email);
+      if (!order && !isAdmin && !registeredStudent) return fail(res, 403, 'Create a CivilPrelims account before signing in with Google.');
       const role = isAdmin ? 'admin' : 'student';
       await createSession(req, res, role, email);
       return json(res, 200, { ok:true, role, redirect: role === 'admin' ? '/admin' : '/library' });
@@ -557,7 +644,7 @@ async function api(req, res) {
           return { email, phone:ownOrders[0]?.phone || '', accessCode:ownOrders[0]?.accessCodeEncrypted ? decrypt(ownOrders[0].accessCodeEncrypted) : '', role:state.userRoles[email] || 'student', joinedAt:ownOrders.at(-1)?.paidAt, purchases:ownOrders.length, paidRevenue:ownOrders.filter(o => o.mode === 'live').reduce((n,o) => n + o.amount,0), tests:attempts.length, averageScore:attempts.length ? Math.round(attempts.reduce((n,a) => n + a.correct / Math.max(a.total,1) * 100,0) / attempts.length) : null, lastActive:lastEvent?.at || ownOrders[0]?.paidAt, lastSubject:attempts[0]?.subjectName || null, testMode:ownOrders.every(o => o.mode === 'test') };
         });
         const primaryAdmin = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
-        const adminUsers = [{ email:primaryAdmin, primary:true }, ...Object.entries(state.userRoles).filter(([email, role]) => role === 'admin' && email !== primaryAdmin).map(([email]) => ({ email, primary:false }))].filter(user => user.email);
+        const adminUsers = await listAdminUsers();
         return json(res, 200, { ok:true, range, purchases:paid.length, testPurchases:testPaid.length, revenue:paid.reduce((n,o) => n + o.amount,0), lifetimePurchases:state.orders.filter(o => o.status === 'paid' && o.mode === 'live').length, lifetimeRevenue:state.orders.filter(o => o.status === 'paid' && o.mode === 'live').reduce((n,o) => n + o.amount,0), lifetimeStudents:new Set(state.orders.filter(o => o.status === 'paid' && o.mode === 'live').map(o => o.email)).size, totalTestAttempts:state.attempts.length, visitors:visitors.size, pageViews:events.filter(e => e.type === 'page_view').length, buyClicks:interested.size, checkouts:orders.length, checkoutVisitors:checkoutVisitors.size, clickNoPurchase, conversion:visitors.size ? Math.round(new Set(paid.map(o => o.visitorId).filter(Boolean)).size / visitors.size * 1000) / 10 : 0, daily, topPages, adminUsers, customers:customers.sort((a,b) => b.lastActive.localeCompare(a.lastActive)), orders:state.orders.filter(o => o.status === 'paid').map(publicOrder).slice(0, 100), questions:state.questions, config:state.config, pdf:state.pdf, updates:state.updates });
       }
       if (p === '/api/admin/users' && req.method === 'POST') {
@@ -567,7 +654,7 @@ async function api(req, res) {
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return fail(res, 400, 'Enter a valid email address.');
         if (!['student','admin'].includes(role)) return fail(res, 400, 'Role must be student or admin.');
         if (email === String(process.env.ADMIN_EMAIL || '').trim().toLowerCase()) return fail(res, 409, 'This is the primary admin account.');
-        state.userRoles[email] = role; await save();
+        await setUserRole(email, role);
         return json(res, 200, { ok:true, email, role });
       }
       if (p.startsWith('/api/admin/students/') && req.method === 'GET') {
@@ -582,7 +669,7 @@ async function api(req, res) {
         const email = decodeURIComponent(p.slice('/api/admin/students/'.length));
         const input = await body(req);
         if (!['student','admin'].includes(input.role)) return fail(res, 400, 'Role must be student or admin.');
-        state.userRoles[email] = input.role; await save();
+        await setUserRole(email, input.role);
         return json(res, 200, { ok:true, email, role:input.role });
       }
       if (p === '/api/admin/updates' && req.method === 'POST') {

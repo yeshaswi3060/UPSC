@@ -4,12 +4,13 @@ import { useStore } from '../context/StoreContext';
 import { api } from '../services/api';
 
 export default function StudentDashboard() {
-  const { catalog, session, loading, navigate } = useStore();
+  const { catalog, session, loading, navigate, openCheckout } = useStore();
   const [readerOpen, setReaderOpen] = useState(false);
   const [profile, setProfile] = useState(null);
   useEffect(() => { if (session?.role === 'student') api('/api/profile').then(setProfile).catch(() => {}); }, [session?.role]);
   if (loading) return <main className="route-gate"><p>Opening your library…</p></main>;
-  if (session?.role !== 'student' || !session.hasPurchase) return <main className="route-gate"><div className="section-kicker">STUDENT LIBRARY</div><h1>Your paper is waiting.</h1><p>Sign in with the email and access code from your purchase.</p><button className="btn btn-coral" onClick={() => navigate('login')}>Student sign in <ArrowRight size={18}/></button></main>;
+  if (session?.role !== 'student') return <main className="route-gate"><div className="section-kicker">STUDENT LIBRARY</div><h1>Your paper is waiting.</h1><p>Log in with your account or create a student profile to get started.</p><button className="btn btn-coral" onClick={() => navigate('login')}>Log in / Sign up <ArrowRight size={18}/></button></main>;
+  if (!session.hasPurchase) return <main className="route-gate"><div className="section-kicker">STUDENT ACCOUNT</div><h1>Your profile is ready.</h1><p>You are signed in as {session.email}. Buy a practice paper to unlock the library and subject tests.</p><button className="btn btn-coral" disabled={catalog.checkoutMode === 'unavailable'} onClick={openCheckout}>{catalog.checkoutMode === 'unavailable' ? 'Launching soon' : 'Get the paper'} <ArrowRight size={18}/></button></main>;
   return <main className="library-page"><div className="container">
     <div className="library-hero"><div><div className="section-kicker">YOUR STUDY SPACE / 2026</div><h1>Ready when<br/><em>you are.</em></h1><p>Your paper and subject practice are here whenever you need another round.</p><div className="library-account"><ShieldCheck size={17}/> Access linked to {session.email}</div><button className="library-profile-link" onClick={() => navigate('profile')}>See your daily scores and profile <ArrowRight size={17}/></button></div><div className="library-hero-art"><BookOpen size={70} strokeWidth={1.1}/><span>READ / PRACTISE / REVIEW</span></div></div>
     <div className="library-content-heading"><span>01 / YOUR PAPER</span><span>KEEP IT CLOSE</span></div>
